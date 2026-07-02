@@ -1,6 +1,5 @@
 """Tests for deterioration index and severity classification."""
 
-import pytest
 
 from src.governance.deterioration import compute_deterioration_index
 from src.governance.severity import severity_from_score

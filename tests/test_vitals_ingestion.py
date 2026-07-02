@@ -1,12 +1,10 @@
 """Tests for FHIR ingestion and windowing."""
 
-from datetime import datetime
 
 import pytest
 
 from src.ingestion.fhir_parser import LOINC_CODES, parse_batch, parse_observation
 from src.ingestion.windowing import window_vitals
-from src.models.vitals import VitalSignsWindow
 
 
 def make_observation(loinc: str, value: float, patient_id: str = "PT-001"):

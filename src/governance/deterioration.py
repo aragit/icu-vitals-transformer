@@ -1,6 +1,5 @@
 """NEWS2-inspired deterioration index computation."""
 
-from typing import Optional
 
 from loguru import logger
 

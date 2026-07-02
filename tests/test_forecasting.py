@@ -4,6 +4,7 @@ import pytest
 
 from src.forecasting.forecaster import _extrapolate_value, _compute_uncertainty, forecast_vitals
 from src.forecasting.ensemble import ensemble_forecast, ensemble_deterioration_index, HORIZON_WEIGHTS
+from src.forecasting.backends import DeterministicBackend
 from src.models.vitals import VitalSignsWindow
 
 
@@ -100,6 +101,21 @@ class TestEnsembleForecast:
         # At least one horizon should trigger ALERT or EMERGENCY
         severities = [r.severity for r in results]
         assert any(s in ("ALERT", "EMERGENCY") for s in severities)
+
+    def test_with_explicit_backend(self):
+        current = VitalSignsWindow(
+            patient_id="PT-001",
+            window_start="2026-07-02T08:00:00",
+            window_end="2026-07-02T08:05:00",
+            heart_rate=72,
+            systolic_bp=120,
+            spo2=98,
+            respiratory_rate=16,
+            temperature=36.5,
+        )
+        results = ensemble_forecast(current, backend=DeterministicBackend())
+        assert len(results) == 3
+        assert results[0].severity == "NORMAL"
 
 
 class TestEnsembleDeteriorationIndex:

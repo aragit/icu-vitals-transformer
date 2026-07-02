@@ -1,7 +1,6 @@
 """FHIR R4 Observation parser."""
 
 from datetime import datetime
-from typing import Optional
 
 from loguru import logger
 

@@ -4,7 +4,7 @@ All counters are intentionally label-free to avoid high-cardinality issues
 with patient_id in production. Labels are passed as structured log fields.
 """
 
-from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
+from prometheus_client import Counter, Histogram, generate_latest
 
 # Counters — no labels to prevent cardinality explosion
 VITALS_INGESTED = Counter(

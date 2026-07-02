@@ -6,7 +6,7 @@ from src.observability.metrics import FORECASTS_GENERATED, FORECAST_LATENCY, ASS
 
 from src.models.vitals import VitalSignsWindow
 from src.models.forecast import ForecastResult, DeteriorationAssessment
-from src.forecasting.forecaster import forecast_vitals
+from src.forecasting.backends import DeterministicBackend, ForecastBackend
 from src.governance.deterioration import compute_deterioration_index
 from src.governance.severity import severity_from_score
 
@@ -18,22 +18,25 @@ HORIZON_WEIGHTS = {60: 0.5, 240: 0.3, 720: 0.2}
 def ensemble_forecast(
     current_window: VitalSignsWindow,
     trend_per_hour: dict[str, float] | None = None,
+    backend: ForecastBackend | None = None,
 ) -> list[ForecastResult]:
     """Generate multi-horizon forecasts and attach governance classification.
 
     Args:
         current_window: Latest aggregated vital signs
         trend_per_hour: Optional trend overrides per vital type
+        backend: ForecastBackend implementation (default: DeterministicBackend)
 
     Returns:
         List of ForecastResult for each horizon (60, 240, 720 min)
     """
+    backend = backend or DeterministicBackend()
     horizons = [60, 240, 720]
     results = []
 
     for horizon in horizons:
         with FORECAST_LATENCY.time():
-            forecast = forecast_vitals(current_window, horizon, trend_per_hour)
+            forecast = backend.forecast(current_window, horizon, trend_per_hour)
         score, factors = compute_deterioration_index(forecast.forecasted_vitals)
         severity = severity_from_score(score)
 
