@@ -4,15 +4,12 @@
 <p align="center"><sub>FastAPI · Pydantic v2 · MCP · Prometheus · Docker · pytest</sub></p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Status-🧪%20Experimental-yellow" alt="Experimental">
   <img src="https://img.shields.io/badge/Python-3.12+-blue?logo=python" alt="Python">
   <img src="https://img.shields.io/badge/FastAPI-0.111+-teal?logo=fastapi" alt="FastAPI">
   <img src="https://img.shields.io/badge/Pydantic_v2-2.7+-purple?logo=pydantic" alt="Pydantic">
   <img src="https://img.shields.io/badge/MCP-1.0+-black?logo=modelcontextprotocol" alt="MCP">
   <img src="https://img.shields.io/badge/Prometheus-0.20+-orange?logo=prometheus" alt="Prometheus">
   <img src="https://img.shields.io/badge/Docker-Ready-blue?logo=docker" alt="Docker">
-  <img src="https://img.shields.io/badge/Tests-56%20passing-brightgreen" alt="Tests">
-  <img src="https://img.shields.io/badge/Coverage-90%25-green" alt="Coverage">
   <img src="https://img.shields.io/badge/License-MIT-green" alt="MIT">
 </p>
 
