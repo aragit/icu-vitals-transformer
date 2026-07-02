@@ -5,6 +5,8 @@ from typing import Optional
 
 from loguru import logger
 
+from src.observability.metrics import VITALS_INGESTED
+
 
 LOINC_CODES = {
     "8867-4": "heart_rate",
@@ -60,4 +62,5 @@ def parse_batch(observations: list[dict]) -> list[dict]:
                 results.append(parsed)
         except Exception as e:
             logger.warning(f"Failed to parse observation: {e}")
+    VITALS_INGESTED.inc(len(results))
     return results

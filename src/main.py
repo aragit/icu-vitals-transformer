@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from loguru import logger
 
 from src.config import settings
-from src.api.routes import health, vitals
+from src.api.routes import health, vitals, metrics as metrics_route
 
 
 @asynccontextmanager
@@ -26,6 +26,7 @@ app = FastAPI(
 
 app.include_router(health.router, prefix="/health", tags=["health"])
 app.include_router(vitals.router, tags=["vitals"])
+app.include_router(metrics_route.router, tags=["metrics"])
 
 
 @app.get("/")

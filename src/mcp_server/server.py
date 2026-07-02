@@ -10,6 +10,7 @@ from mcp.server import Server
 from mcp.types import TextContent, Tool
 
 from src.config import settings
+from src.observability.metrics import MCP_TOOL_CALLS
 from src.ingestion.fhir_parser import parse_batch
 from src.ingestion.windowing import window_vitals
 from src.forecasting.ensemble import ensemble_forecast, ensemble_deterioration_index
@@ -48,6 +49,7 @@ async def list_tools() -> list[Tool]:
 @app.call_tool()
 async def call_tool(name: str, arguments: dict) -> list[TextContent]:
     """Route tool calls."""
+    MCP_TOOL_CALLS.inc()
     if name == "ingest_vitals":
         return await _handle_ingest(arguments)
     elif name == "get_forecast":

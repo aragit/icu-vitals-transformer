@@ -2,6 +2,8 @@
 
 from loguru import logger
 
+from src.observability.metrics import FORECASTS_GENERATED, FORECAST_LATENCY, ASSESSMENTS_TOTAL
+
 from src.models.vitals import VitalSignsWindow
 from src.models.forecast import ForecastResult, DeteriorationAssessment
 from src.forecasting.forecaster import forecast_vitals
@@ -30,12 +32,14 @@ def ensemble_forecast(
     results = []
 
     for horizon in horizons:
-        forecast = forecast_vitals(current_window, horizon, trend_per_hour)
+        with FORECAST_LATENCY.time():
+            forecast = forecast_vitals(current_window, horizon, trend_per_hour)
         score, factors = compute_deterioration_index(forecast.forecasted_vitals)
         severity = severity_from_score(score)
 
         forecast.deterioration_index = round(score, 2)
         forecast.severity = severity
+        FORECASTS_GENERATED.inc()
 
         results.append(forecast)
         logger.debug(f"Horizon {horizon}min: score={score}, severity={severity}")
@@ -78,6 +82,7 @@ def ensemble_deterioration_index(forecasts: list[ForecastResult]) -> Deteriorati
 
     final_score = round(weighted_score, 2)
 
+    ASSESSMENTS_TOTAL.inc()
     logger.info(f"Ensemble deterioration index for {patient_id}: {final_score} ({max_severity})")
 
     return DeteriorationAssessment(
