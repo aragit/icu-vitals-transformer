@@ -2,7 +2,7 @@ fastapi>=0.111.0
 uvicorn[standard]>=0.30.0
 pydantic>=2.7.0
 pydantic-settings>=2.2.0
-mcp>=1.0.0
+mcp==1.26.0  # pinned for SDK parity: provides both mcp.server.Server (legacy) and mcp.server.fastmcp.FastMCP; newer mcp removed the legacy Server decorator API and breaks baseline imports
 aiokafka>=0.10.0
 prometheus-client>=0.20.0
 loguru>=0.7.0

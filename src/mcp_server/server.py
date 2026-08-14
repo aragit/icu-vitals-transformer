@@ -14,14 +14,12 @@ from src.ingestion.fhir_parser import parse_batch
 from src.ingestion.windowing import window_vitals
 from src.forecasting.ensemble import ensemble_forecast, ensemble_deterioration_index
 from src.models.mcp import IngestVitalsInput, GetForecastInput, GetDeteriorationInput
-
-
-# In-memory store for demo (caller manages persistence).
-# ⚠️ SINGLE-INSTANCE ONLY / DEPRECATED: prefer src.dependencies.get_vitals_repo()
-# for the Phase 2 window store. Retained verbatim so the Phase 0 baseline suite
-# (which clears/asserts on this raw-record dict) stays green; it accumulates
-# raw FHIR records, not VitalSignsWindow objects.
-_vitals_store: dict[str, list[dict]] = {}
+# Shared raw-FHIR in-memory store — lives in src.vitals_state so the REST v1
+# routes and the stdio entry point no longer import this legacy MCP Server
+# module. Re-exported here so existing baseline tests that clear
+# ``_vitals_store`` via `from src.mcp_server.server import _vitals_store`
+# keep working unchanged.
+from src.vitals_state import _vitals_store
 
 
 app = Server(settings.mcp_server_name)

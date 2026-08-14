@@ -7,7 +7,7 @@ from src.ingestion.windowing import window_vitals
 from src.forecasting.ensemble import ensemble_forecast, ensemble_deterioration_index
 from src.models.vitals import VitalIngestionRequest, VitalSignsWindow
 from src.models.forecast import ForecastResult, DeteriorationAssessment
-from src.mcp_server.server import _vitals_store
+from src.vitals_state import _vitals_store
 
 router = APIRouter(prefix="/vitals", tags=["vitals"])
 
