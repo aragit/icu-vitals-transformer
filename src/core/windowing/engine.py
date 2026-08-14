@@ -19,6 +19,7 @@ from datetime import datetime, timedelta
 from typing import Any, Optional
 
 from src.core.domain.vitals import VitalSignsWindow
+from src.core.ingestion.fhir_parser import VALID_AVPU_TOKENS
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +79,7 @@ def window_vitals(
         window_end = window_start + timedelta(minutes=window_minutes)
 
     values: dict[str, list[float]] = {vt: [] for vt in VITAL_TYPES}
+    most_recent_avpu: Optional[str] = None
     for record in patient_records:
         ts = _parse_ts(str(record["timestamp"]))
         if anchor == "recent" and ts < window_start:
@@ -91,6 +93,12 @@ def window_vitals(
                 values[vital_type].append(float(val))
             except (TypeError, ValueError):
                 logger.warning("Non-numeric value for %s: %s", vital_type, val)
+        avpu_candidate = record.get("avpu")
+        if (
+            isinstance(avpu_candidate, str)
+            and avpu_candidate in VALID_AVPU_TOKENS
+        ):
+            most_recent_avpu = avpu_candidate
 
     return VitalSignsWindow(
         patient_id=patient_id,
@@ -102,4 +110,5 @@ def window_vitals(
         spo2=_mean(values["spo2"]),
         respiratory_rate=_mean(values["respiratory_rate"]),
         temperature=_mean(values["temperature"]),
+        avpu=most_recent_avpu,
     )
