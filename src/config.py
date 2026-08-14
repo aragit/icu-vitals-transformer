@@ -14,7 +14,7 @@ class Settings(BaseSettings):
 
     # App
     app_name: str = "icu-vitals-transformer"
-    app_version: str = "0.1.0"
+    app_version: str = "0.9.0"
     debug: bool = False
 
     # Server

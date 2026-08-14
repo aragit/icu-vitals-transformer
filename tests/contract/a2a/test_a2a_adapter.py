@@ -81,7 +81,7 @@ async def test_agent_card_served_when_enabled():
     assert response.status_code == 200
     card = response.json()
     assert card["name"] == "icu-vitals-transformer"
-    assert card["version"] == "0.2.0"
+    assert card["version"] == "0.9.0"
     assert card["schema"] == "a2a-agent-card/v1"
     assert "skills" in card and "operationalGuardrails" in card
     assert card["operationalGuardrails"]["auth"]["scheme"] == "CIMD-JWT"

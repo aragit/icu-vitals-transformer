@@ -5,7 +5,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/status-production--ready-brightgreen" alt="Status">
-  <img src="https://img.shields.io/badge/Version-v0.2.0-blue" alt="Version">
+  <img src="https://img.shields.io/badge/Version-v0.9.0-blue" alt="Version">
   <img src="https://img.shields.io/badge/Python-3.12+-blue?logo=python" alt="Python">
   <img src="https://img.shields.io/badge/FastAPI-0.111+-teal?logo=fastapi" alt="FastAPI">
   <img src="https://img.shields.io/badge/Pydantic_v2-2.7+-purple?logo=pydantic" alt="Pydantic">
@@ -68,7 +68,7 @@ Designed to be composed into larger clinical agent architectures. The tool makes
 
 ## Architecture
 
-`icu-vitals-transformer` v0.2.0 is a **Hexagonal Skill Engine**: the clinical
+`icu-vitals-transformer` v0.9.0 is a **Hexagonal Skill Engine**: the clinical
 logic (trend extrapolation, DDS, FHIR windowing, episode lifecycle, SafetyShell)
 lives in a pure-Python core (`src/core/`) that depends only on the standard
 library + Pydantic. Adapters handle REST v2, MCP, A2A, Redis/memory storage,
@@ -133,7 +133,7 @@ docker compose -f docker/docker-compose.yml up --build
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `APP_NAME` | `icu-vitals-transformer` | Application name |
-| `APP_VERSION` | `0.2.0` | Application version |
+| `APP_VERSION` | `0.9.0` | Application version |
 | `DEBUG` | `false` | Enable debug logging |
 | `HOST` | `0.0.0.0` | Server bind address |
 | `PORT` | `8000` | Server port |

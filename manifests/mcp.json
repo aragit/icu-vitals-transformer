@@ -2,7 +2,7 @@
   "mcpVersion": "1.0",
   "name": "icu-vitals-transformer",
   "description": "MCP clinical forecasting skill for ICU vital signs. Provides deterministic trend extrapolation, SafetyShell-bounded forecasting, and DDS deterioration scoring behind a pure-Python core.",
-  "version": "0.1.0",
+  "version": "0.9.0",
   "execution": {
     "_meta": {
       "determinism": "deterministic",
