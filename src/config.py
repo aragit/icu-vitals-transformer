@@ -29,5 +29,8 @@ class Settings(BaseSettings):
     mcp_transport: str = "stdio"  # stdio (dev) or http (streamable-http, prod)
     mcp_transport_env: str = "MCP_TRANSPORT"  # env var override name
 
+    # A2A (Agent-to-Agent) transport — off by default; opt-in via env.
+    a2a_enabled: bool = False
+
 
 settings = Settings()

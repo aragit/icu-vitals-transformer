@@ -9,6 +9,7 @@ from src.config import settings
 from src.api.routes import health, vitals, metrics as metrics_route
 from src.adapters.rest.middleware import CorrelationIdMiddleware
 from src.adapters.rest.routes import (
+    a2a,
     discovery,
     health as health_v2,
     metrics as metrics_v2,
@@ -41,6 +42,10 @@ app.include_router(vitals_v2.router)
 app.include_router(health_v2.router)
 app.include_router(metrics_v2.router)
 app.include_router(discovery.router)
+# A2A adapter is mounted unconditionally but gated at the endpoint level by
+# settings.a2a_enabled (== HTTP 404 when disabled), so the toggle is testable
+# without rebuilding the app and never disturbs the REST v2 / MCP surfaces.
+app.include_router(a2a.router)
 
 
 @app.get("/")

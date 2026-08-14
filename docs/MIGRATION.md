@@ -77,3 +77,21 @@ Frozen the v0.1.0 behavior as the regression anchor:
 - The v2 and MCP surfaces share a single `ClinicalAssessmentService` hex-core
   singleton; migration is a transport-layer switch, not a logic rewrite.
 - **Target:** 240+ tests green, `mypy src/` clean, `ruff` clean, ≥ 92 % coverage.
+
+## Phase 7 — A2A (Agent-to-Agent) Extension
+
+A thin, feature-flagged outer adapter (no hex-core changes) exposing the skill
+to A2A orchestrators:
+
+- **Feature flag:** `A2A_ENABLED=true` (default `false`) in `src/config.py`.
+- **Discovery:** `GET /.well-known/agent.json` serves `manifests/AGENT_CARD.json`.
+- **Task dispatch:** `POST /a2a/tasks` via `A2ATaskHandler`
+  (`src/adapters/a2a/task_handler.py`) — normalizes A2A `message.parts[].data`
+  payloads, dispatches `ingest_vitals` / `get_forecast` / `get_deterioration_index`
+  to the shared `ClinicalAssessmentService`, and returns a standard A2A Artifact
+  whose `data` carries the clinical result + the `_meta` safety envelope.
+- **Isolation:** routes are gated at the endpoint level by `settings.a2a_enabled`
+  (return HTTP 404 when disabled) so REST v2 / MCP stay unaffected and the toggle
+  is hermetic for CI.
+- **Tests:** `tests/contract/a2a/test_a2a_adapter.py` covers card discovery,
+  all three task actions, error mapping, and the disabled → 404 boundary.
