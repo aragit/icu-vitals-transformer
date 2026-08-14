@@ -51,7 +51,7 @@ def run_mcp_server(server: FastMCP, transport: str | None = None) -> None:
     ``transport`` explicitly overrides the environment/setting resolution.
     """
     resolved = transport or _resolve_transport()
-    server.run(transport=resolved)  # type: ignore[arg-type]
+    server.run(transport=resolved)
 
 
 __all__ = ["create_mcp_server", "run_mcp_server"]
