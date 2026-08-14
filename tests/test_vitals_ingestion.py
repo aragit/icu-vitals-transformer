@@ -62,9 +62,12 @@ class TestFhirParser:
 class TestWindowing:
     def test_window_vitals_basic(self):
         records = [
-            {"patient_id": "PT-001", "vital_type": "heart_rate", "value": 70, "timestamp": "2026-07-02T08:00:00Z"},
-            {"patient_id": "PT-001", "vital_type": "heart_rate", "value": 74, "timestamp": "2026-07-02T08:02:00Z"},
-            {"patient_id": "PT-001", "vital_type": "systolic_bp", "value": 120, "timestamp": "2026-07-02T08:01:00Z"},
+            {"patient_id": "PT-001", "vital_type": "heart_rate", "value": 70,
+             "timestamp": "2026-07-02T08:00:00Z"},
+            {"patient_id": "PT-001", "vital_type": "heart_rate", "value": 74,
+             "timestamp": "2026-07-02T08:02:00Z"},
+            {"patient_id": "PT-001", "vital_type": "systolic_bp", "value": 120,
+             "timestamp": "2026-07-02T08:01:00Z"},
         ]
         window = window_vitals(records, "PT-001", window_minutes=5)
         assert window is not None
@@ -76,21 +79,26 @@ class TestWindowing:
         assert window_vitals([], "PT-001") is None
 
     def test_window_vitals_wrong_patient(self):
-        records = [{"patient_id": "PT-002", "vital_type": "heart_rate", "value": 70, "timestamp": "2026-07-02T08:00:00Z"}]
+        records = [{"patient_id": "PT-002", "vital_type": "heart_rate", "value": 70,
+                    "timestamp": "2026-07-02T08:00:00Z"}]
         assert window_vitals(records, "PT-001") is None
 
     def test_window_vitals_outside_window(self):
         records = [
-            {"patient_id": "PT-001", "vital_type": "heart_rate", "value": 70, "timestamp": "2026-07-02T08:00:00Z"},
-            {"patient_id": "PT-001", "vital_type": "heart_rate", "value": 80, "timestamp": "2026-07-02T08:10:00Z"},  # outside 5min window
+            {"patient_id": "PT-001", "vital_type": "heart_rate", "value": 70,
+             "timestamp": "2026-07-02T08:00:00Z"},
+            {"patient_id": "PT-001", "vital_type": "heart_rate", "value": 80,
+             "timestamp": "2026-07-02T08:10:00Z"},  # outside 5min window
         ]
         window = window_vitals(records, "PT-001", window_minutes=5)
         assert window.heart_rate == 70.0  # only first record in window
 
     def test_window_vitals_non_numeric_skipped(self):
         records = [
-            {"patient_id": "PT-001", "vital_type": "heart_rate", "value": "invalid", "timestamp": "2026-07-02T08:00:00Z"},
-            {"patient_id": "PT-001", "vital_type": "heart_rate", "value": 80, "timestamp": "2026-07-02T08:01:00Z"},
+            {"patient_id": "PT-001", "vital_type": "heart_rate", "value": "invalid",
+             "timestamp": "2026-07-02T08:00:00Z"},
+            {"patient_id": "PT-001", "vital_type": "heart_rate", "value": 80,
+             "timestamp": "2026-07-02T08:01:00Z"},
         ]
         window = window_vitals(records, "PT-001", window_minutes=5)
         assert window.heart_rate == 80.0

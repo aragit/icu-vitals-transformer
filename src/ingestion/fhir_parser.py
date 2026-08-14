@@ -1,65 +1,31 @@
-"""FHIR R4 Observation parser."""
+"""Legacy FHIR ingestion shim — delegates to the Core domain parser.
 
-from datetime import datetime
+Phase 1 strangler-fig: the canonical pure parser lives in
+``src/core/ingestion/fhir_parser.py``. This thin adapter preserves the legacy
+public API (``LOINC_CODES``, ``parse_observation``, ``parse_batch``) and
+re-asserts the Phase 0 observability contract (``VITALS_INGESTED`` counter),
+which the pure core layer intentionally does not own.
+"""
 
-from loguru import logger
+from __future__ import annotations
 
+from typing import Any
+
+from src.core.ingestion.fhir_parser import (
+    LOINC_CODES,
+    parse_batch as _core_parse_batch,
+    parse_observation as _core_parse_observation,
+)
 from src.observability.metrics import VITALS_INGESTED
 
-
-LOINC_CODES = {
-    "8867-4": "heart_rate",
-    "8480-6": "systolic_bp",
-    "8462-4": "diastolic_bp",
-    "2708-6": "spo2",
-    "9279-1": "respiratory_rate",
-    "8310-5": "temperature",
-}
+__all__ = ["LOINC_CODES", "parse_observation", "parse_batch"]
 
 
-def parse_observation(obs: dict) -> dict:
-    """Parse a single FHIR R4 Observation into internal vital sign record."""
-    if obs.get("resourceType") != "Observation":
-        raise ValueError(f"Expected Observation, got {obs.get('resourceType')}")
-
-    patient_ref = obs.get("subject", {}).get("reference", "")
-    patient_id = patient_ref.replace("Patient/", "") if patient_ref else "unknown"
-
-    code_coding = obs.get("code", {}).get("coding", [])
-    loinc = next((c.get("code") for c in code_coding if c.get("system", "").endswith("loinc.org")), None)
-
-    if not loinc or loinc not in LOINC_CODES:
-        logger.warning(f"Unknown or missing LOINC code in observation: {loinc}")
-        return {}
-
-    vital_type = LOINC_CODES[loinc]
-    value = None
-
-    if "valueQuantity" in obs:
-        value = obs["valueQuantity"].get("value")
-    elif "valueString" in obs:
-        value = obs["valueString"]
-
-    effective = obs.get("effectiveDateTime") or obs.get("issued") or datetime.utcnow().isoformat()
-
-    return {
-        "patient_id": patient_id,
-        "vital_type": vital_type,
-        "value": value,
-        "timestamp": effective,
-        "unit": obs.get("valueQuantity", {}).get("unit"),
-    }
+def parse_observation(obs: dict[str, Any]) -> dict[str, Any]:
+    return _core_parse_observation(obs)
 
 
-def parse_batch(observations: list[dict]) -> list[dict]:
-    """Parse a batch of FHIR Observations, skip invalid entries."""
-    results = []
-    for obs in observations:
-        try:
-            parsed = parse_observation(obs)
-            if parsed:
-                results.append(parsed)
-        except Exception as e:
-            logger.warning(f"Failed to parse observation: {e}")
+def parse_batch(observations: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    results = _core_parse_batch(observations)
     VITALS_INGESTED.inc(len(results))
     return results

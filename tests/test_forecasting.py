@@ -2,9 +2,13 @@
 
 import pytest
 
-from src.forecasting.forecaster import _extrapolate_value, _compute_uncertainty, forecast_vitals
-from src.forecasting.ensemble import ensemble_forecast, ensemble_deterioration_index, HORIZON_WEIGHTS
 from src.forecasting.backends import DeterministicBackend
+from src.forecasting.ensemble import (
+    HORIZON_WEIGHTS,
+    ensemble_deterioration_index,
+    ensemble_forecast,
+)
+from src.forecasting.forecaster import _compute_uncertainty, _extrapolate_value, forecast_vitals
 from src.models.vitals import VitalSignsWindow
 
 

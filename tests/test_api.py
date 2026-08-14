@@ -1,7 +1,7 @@
 """Tests for FastAPI endpoints."""
 
-import pytest
 import httpx
+import pytest
 
 from src.main import app
 from src.mcp_server.server import _vitals_store
@@ -64,7 +64,8 @@ async def test_ingest_vitals():
 async def test_ingest_invalid():
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.post("/vitals/ingest", json={"observations": [{"resourceType": "Patient"}]})
+        body = {"observations": [{"resourceType": "Patient"}]}
+        response = await client.post("/vitals/ingest", json=body)
     assert response.status_code == 400
 
 

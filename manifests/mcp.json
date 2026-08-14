@@ -1,0 +1,85 @@
+{
+  "mcpVersion": "1.0",
+  "name": "icu-vitals-transformer",
+  "description": "MCP clinical forecasting skill for ICU vital signs. Provides deterministic trend extrapolation, SafetyShell-bounded forecasting, and DDS deterioration scoring behind a pure-Python core.",
+  "version": "0.1.0",
+  "execution": {
+    "_meta": {
+      "determinism": "deterministic",
+      "side_effects": false,
+      "core_isolation": true,
+      "framework_deps": ["mcp", "fastapi", "prometheus_client"]
+    }
+  },
+  "capabilities": {
+    "prompts": false,
+    "resources": [
+      {
+        "uri": "clinical://bounds/v1",
+        "name": "Clinical vital-sign clamping bounds",
+        "description": "Physiological min/max bounds applied by SafetyShell (heart_rate 0-300, systolic 0-300, diastolic 0-200, spo2 0-100, respiratory 0-60, temperature 30-45).",
+        "mimeType": "application/json"
+      },
+      {
+        "uri": "clinical://loinc-mapping/v1",
+        "name": "LOINC-to-vital-type mapping",
+        "description": "Maps FHIR LOINC observation codes to internal vital types (8867-4=heart_rate, 8480-6=systolic_bp, 8462-4=diastolic_bp, 2708-6=spo2, 9279-1=respiratory_rate, 8310-5=temperature).",
+        "mimeType": "application/json"
+      },
+      {
+        "uri": "clinical://dds-tiers/v1",
+        "name": "DDS risk-tier interpretation",
+        "description": "Deterministic Deterioration Score tiers: NORMAL(0-5), WARNING(6-10), ALERT(11-14), EMERGENCY(15-20), CRITICAL(>20).",
+        "mimeType": "application/json"
+      }
+    ],
+    "tools": [
+      {
+        "name": "ingest_vitals",
+        "description": "Ingest a batch of FHIR R4 Observation resources for a patient. Auto-resolves or creates the active clinical episode and returns the windowed vitals plus the _meta safety envelope.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "patient_id": {"type": "string", "description": "Canonical patient identifier."},
+            "observations": {"type": "array", "items": {"type": "object"}, "description": "List of FHIR R4 Observation JSON dicts."}
+          },
+          "required": ["patient_id", "observations"]
+        }
+      },
+      {
+        "name": "get_forecast",
+        "description": "Generate a SafetyShell-bounded, trend-aware forecast for an episode at the requested horizon. Includes uncertainty bounds, stale-data warning, and contributing factors.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "episode_id": {"type": "string"},
+            "horizon_minutes": {"type": "integer", "default": 60, "minimum": 60, "maximum": 720}
+          },
+          "required": ["episode_id"]
+        }
+      },
+      {
+        "name": "get_deterioration_index",
+        "description": "Compute the Deterministic Deterioration Score (DDS), severity tier, and contributing factors for an episode; records the episode state transition.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {"episode_id": {"type": "string"}},
+          "required": ["episode_id"]
+        }
+      },
+      {
+        "name": "discover_episode",
+        "description": "Discover the currently-active episode and state for a patient. Prompts with MRTR disambiguation when multiple active episodes exist.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {"patient_id": {"type": "string"}},
+          "required": ["patient_id"]
+        }
+      }
+    ]
+  },
+  "auth": {
+    "schemes": ["CIMD-JWT"],
+    "requiredFor": ["ingest_vitals", "get_forecast", "get_deterioration_index", "discover_episode"]
+  }
+}

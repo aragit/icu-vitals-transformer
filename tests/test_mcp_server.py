@@ -1,9 +1,15 @@
 """Tests for MCP server tools."""
 
 import json
+
 import pytest
 
-from src.mcp_server.server import _vitals_store, _handle_ingest, _handle_forecast, _handle_deterioration
+from src.mcp_server.server import (
+    _handle_deterioration,
+    _handle_forecast,
+    _handle_ingest,
+    _vitals_store,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -40,7 +46,8 @@ async def test_ingest_single_observation():
 
 @pytest.mark.asyncio
 async def test_ingest_invalid_observation():
-    result = await _handle_ingest({"patient_id": "PT-001", "observations": [{"resourceType": "Patient"}]})
+    obs = {"resourceType": "Patient"}
+    result = await _handle_ingest({"patient_id": "PT-001", "observations": [obs]})
     data = json.loads(result[0].text)
     assert "error" in data
 

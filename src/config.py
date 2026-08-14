@@ -26,7 +26,8 @@ class Settings(BaseSettings):
 
     # MCP
     mcp_server_name: str = "icu-vitals-transformer"
-    mcp_transport: str = "stdio"  # stdio or sse
+    mcp_transport: str = "stdio"  # stdio (dev) or http (streamable-http, prod)
+    mcp_transport_env: str = "MCP_TRANSPORT"  # env var override name
 
 
 settings = Settings()

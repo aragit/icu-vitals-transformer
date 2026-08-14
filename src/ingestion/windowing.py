@@ -1,70 +1,35 @@
-"""Sliding window aggregation for vital signs."""
+"""Legacy windowing shim — delegates to the Core temporal engine.
 
-from datetime import datetime, timedelta
-from typing import Optional
+Phase 1 strangler-fig: the canonical engine lives in
+``src/core/windowing/engine.py``. The Core engine anchors windows on the
+most-recent observation (Phase 1 clean behavior). To preserve the Phase 0
+baseline contract pinned by the test suite (window anchored on the OLDEST
+record, lexicographic timestamp sort), this shim invokes the core with
+``anchor="oldest"`` and converts the result back to the legacy
+``src.models.vitals.VitalSignsWindow`` shape.
+"""
 
-from loguru import logger
+from __future__ import annotations
 
+from typing import Any, Optional
+
+from src.core.windowing.engine import window_vitals as _core_window_vitals
 from src.models.vitals import VitalSignsWindow
+
+__all__ = ["window_vitals"]
 
 
 def window_vitals(
-    parsed_records: list[dict],
+    parsed_records: list[dict[str, Any]],
     patient_id: str,
     window_minutes: int = 5,
 ) -> Optional[VitalSignsWindow]:
-    """Aggregate parsed vital records into a single VitalSignsWindow."""
-    if not parsed_records:
-        return None
-
-    # Filter by patient and sort by timestamp
-    patient_records = [r for r in parsed_records if r.get("patient_id") == patient_id]
-    if not patient_records:
-        return None
-
-    patient_records.sort(key=lambda x: x.get("timestamp", ""))
-
-    # Define window from oldest to oldest + window_minutes
-    window_start = datetime.fromisoformat(patient_records[0]["timestamp"].replace("Z", "+00:00"))
-    window_end = window_start + timedelta(minutes=window_minutes)
-
-    # Collect values by type within window
-    values = {
-        "heart_rate": [],
-        "systolic_bp": [],
-        "diastolic_bp": [],
-        "spo2": [],
-        "respiratory_rate": [],
-        "temperature": [],
-    }
-
-    for record in patient_records:
-        ts = datetime.fromisoformat(record["timestamp"].replace("Z", "+00:00"))
-        if ts > window_end:
-            break
-        vital_type = record.get("vital_type")
-        val = record.get("value")
-        if vital_type in values and val is not None:
-            try:
-                values[vital_type].append(float(val))
-            except (ValueError, TypeError):
-                logger.warning(f"Non-numeric value for {vital_type}: {val}")
-
-    # Aggregate: mean for continuous, last for AVPU (not handled here)
-    def _mean(vals: list[float]) -> Optional[float]:
-        return round(sum(vals) / len(vals), 2) if vals else None
-
-    window = VitalSignsWindow(
-        patient_id=patient_id,
-        window_start=window_start,
-        window_end=window_end,
-        heart_rate=_mean(values["heart_rate"]),
-        systolic_bp=_mean(values["systolic_bp"]),
-        diastolic_bp=_mean(values["diastolic_bp"]),
-        spo2=_mean(values["spo2"]),
-        respiratory_rate=_mean(values["respiratory_rate"]),
-        temperature=_mean(values["temperature"]),
+    core_window = _core_window_vitals(
+        parsed_records,
+        patient_id,
+        window_minutes=window_minutes,
+        anchor="oldest",
     )
-
-    logger.debug(f"Windowed vitals for {patient_id}: {window.model_dump()}")
-    return window
+    if core_window is None:
+        return None
+    return VitalSignsWindow(**core_window.model_dump())

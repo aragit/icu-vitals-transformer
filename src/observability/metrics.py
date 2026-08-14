@@ -1,12 +1,21 @@
-"""Prometheus metrics for ICU Vitals Transformer.
+"""Prometheus metrics for ICU Vitals Transformer (observability adapter).
 
-All counters are intentionally label-free to avoid high-cardinality issues
-with patient_id in production. Labels are passed as structured log fields.
+Privacy & cardinality contract: counters and gauges are intentionally
+label-free or carry only low-cardinality non-identifying labels (e.g. ``state``
+tiers). No metric exposes identifiers of individual patients or episodes —
+identifying fields travel only in structured logs, never in metric labels.
+
+Backward-compat aliases (``VITALS_INGESTED``, ``FORECASTS_GENERATED``) are
+retained so the Phase 0 metric contract and its tests keep passing; the new
+Phase 4 names (``VITALS_INGESTED_TOTAL``, ``FORECASTS_GENERATED_TOTAL``) are
+bound to the same counters.
 """
 
-from prometheus_client import Counter, Histogram, generate_latest
+from __future__ import annotations
 
-# Counters — no labels to prevent cardinality explosion
+from prometheus_client import Counter, Gauge, Histogram, generate_latest
+
+# Counters — no labels to prevent cardinality explosion.
 VITALS_INGESTED = Counter(
     "vitals_ingested_total",
     "Total number of FHIR observations successfully ingested",
@@ -26,6 +35,34 @@ MCP_TOOL_CALLS = Counter(
     "mcp_tool_calls_total",
     "Total number of MCP tool invocations",
 )
+
+SAFETY_SHELL_FALLBACK_TOTAL = Counter(
+    "safety_shell_fallback_total",
+    "Total number of safety shell invariant fallbacks triggered",
+)
+
+# Phase 4 canonical names (aliased to the same metric objects).
+VITALS_INGESTED_TOTAL = VITALS_INGESTED
+FORECASTS_GENERATED_TOTAL = FORECASTS_GENERATED
+
+# Gauges — only the episode risk tier is labelled (no identifiers).
+EPISODE_STATE_GAUGE = Gauge(
+    "active_episodes",
+    "Active episodes count by state",
+    labelnames=["state"],
+)
+
+
+def set_episode_state_gauges(counts: dict[str, int]) -> None:
+    """Update the per-state episode gauge from a ``{state: count}`` mapping.
+
+    Any stale tiers are reset to zero so the gauge reflects the live set of
+    states (NORMAL/WARNING/ALERT/EMERGENCY/CRITICAL).
+    """
+    tiers = ("NORMAL", "WARNING", "ALERT", "EMERGENCY", "CRITICAL")
+    for tier in tiers:
+        EPISODE_STATE_GAUGE.labels(state=tier).set(counts.get(tier, 0))
+
 
 # Histograms
 FORECAST_LATENCY = Histogram(
@@ -47,6 +84,20 @@ FORECAST_DURATION = Histogram(
 )
 
 
-def metrics_handler():
+def metrics_handler() -> bytes:
     """Return Prometheus exposition format."""
     return generate_latest()
+
+
+__all__ = [
+    "VITALS_INGESTED",
+    "FORECASTS_GENERATED",
+    "ASSESSMENTS_TOTAL",
+    "MCP_TOOL_CALLS",
+    "SAFETY_SHELL_FALLBACK_TOTAL",
+    "VITALS_INGESTED_TOTAL",
+    "FORECASTS_GENERATED_TOTAL",
+    "EPISODE_STATE_GAUGE",
+    "set_episode_state_gauges",
+    "metrics_handler",
+]

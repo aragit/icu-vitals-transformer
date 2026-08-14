@@ -7,6 +7,13 @@ from loguru import logger
 
 from src.config import settings
 from src.api.routes import health, vitals, metrics as metrics_route
+from src.adapters.rest.middleware import CorrelationIdMiddleware
+from src.adapters.rest.routes import (
+    discovery,
+    health as health_v2,
+    metrics as metrics_v2,
+    vitals_v2,
+)
 
 
 @asynccontextmanager
@@ -24,9 +31,16 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.add_middleware(CorrelationIdMiddleware)
+
 app.include_router(health.router, prefix="/health", tags=["health"])
 app.include_router(vitals.router, tags=["vitals"])
 app.include_router(metrics_route.router, tags=["metrics"])
+
+app.include_router(vitals_v2.router)
+app.include_router(health_v2.router)
+app.include_router(metrics_v2.router)
+app.include_router(discovery.router)
 
 
 @app.get("/")

@@ -3,10 +3,10 @@
 import pytest
 
 from src.observability.metrics import (
-    VITALS_INGESTED,
-    FORECASTS_GENERATED,
     ASSESSMENTS_TOTAL,
+    FORECASTS_GENERATED,
     MCP_TOOL_CALLS,
+    VITALS_INGESTED,
     metrics_handler,
 )
 

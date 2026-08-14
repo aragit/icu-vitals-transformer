@@ -1,21 +1,11 @@
-"""Deterministic severity classification."""
+"""Legacy severity shim — delegates to the Core governance mapper.
 
-from loguru import logger
+Phase 1 strangler-fig: canonical risk-tier mapping lives in
+``src/core/governance/severity.py``.
+"""
 
+from __future__ import annotations
 
-def severity_from_score(score: float, trend: str = "stable") -> str:
-    """Classify severity from deterioration score and trend.
+from src.core.governance.severity import severity_from_score
 
-    Deterministic mapping — no ML, no thresholds to tune.
-    """
-    if score >= 7 or trend == "critical":
-        severity = "EMERGENCY"
-    elif score >= 5:
-        severity = "ALERT"
-    elif score >= 3:
-        severity = "WARNING"
-    else:
-        severity = "NORMAL"
-
-    logger.debug(f"Severity classification: score={score}, trend={trend} -> {severity}")
-    return severity
+__all__ = ["severity_from_score"]

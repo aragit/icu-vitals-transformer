@@ -16,7 +16,11 @@ from src.forecasting.ensemble import ensemble_forecast, ensemble_deterioration_i
 from src.models.mcp import IngestVitalsInput, GetForecastInput, GetDeteriorationInput
 
 
-# In-memory store for demo (caller manages persistence)
+# In-memory store for demo (caller manages persistence).
+# ⚠️ SINGLE-INSTANCE ONLY / DEPRECATED: prefer src.dependencies.get_vitals_repo()
+# for the Phase 2 window store. Retained verbatim so the Phase 0 baseline suite
+# (which clears/asserts on this raw-record dict) stays green; it accumulates
+# raw FHIR records, not VitalSignsWindow objects.
 _vitals_store: dict[str, list[dict]] = {}
 
 

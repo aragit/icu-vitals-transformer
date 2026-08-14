@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "icu-vitals-transformer"
-version = "0.1.0"
+version = "0.2.0"
 description = "MCP clinical forecasting skill for ICU vital signs"
 requires-python = ">=3.12"
 dependencies = [
@@ -25,10 +25,73 @@ dependencies = [
 [tool.setuptools.packages.find]
 where = ["src"]
 
-[tool.pytest.ini_options]
-asyncio_mode = "auto"
-testpaths = ["tests"]
-addopts = "--cov=src --cov-report=term-missing --cov-fail-under=30"
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+
+# ---------------------------------------------------------------------------
+# Phase 0/1 baseline lock for ruff
+# ===========================================================================
+# E501 (line-too-long) and I001 (import-order) are ignored for *legacy* src
+# modules only (those outside src/core, src/ports, src/adapters) which carry
+# pre-existing violations and/or are thin strangler shims. New core, ports
+# and adapter code is held to the full 100-char + import-order rule set.
+# These ignores should be removed as legacy modules are retired.
+# ---------------------------------------------------------------------------
+[tool.ruff.lint.per-file-ignores]
+"src/api/**" = ["E501", "I001"]
+"src/config.py" = ["E501", "I001"]
+"src/forecasting/**" = ["E501", "I001"]
+"src/governance/**" = ["E501", "I001"]
+"src/ingestion/**" = ["E501", "I001"]
+"src/mcp_server/**" = ["E501", "I001"]
+"src/models/**" = ["E501", "I001"]
+"src/observability/**" = ["E501", "I001"]
+"src/main.py" = ["E501", "I001"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+ignore_missing_imports = true
+plugins = "pydantic.mypy"
+
+# ---------------------------------------------------------------------------
+# Phase 0/1 baseline lock for mypy
+# ===========================================================================
+# src/core, src/ports and src/adapters are type-checked strictly. The legacy
+# modules below carry pre-existing violations (untyped defs, bare generics,
+# operator narrowing, untyped decorators/calls, etc.) that cannot be cleaned
+# while the strangler shims remain. They are scoped out so `mypy src/` is
+# green; remove as legacy modules are retired.
+# ---------------------------------------------------------------------------
+[[tool.mypy.overrides]]
+module = [
+    "src.api.*",
+    "src.config",
+    "src.forecasting.*",
+    "src.governance.*",
+    "src.ingestion.*",
+    "src.mcp_server.*",
+    "src.models.*",
+    "src.observability.*",
+    "src.main",
+]
+disable_error_code = [
+    "operator",
+    "no-untyped-def",
+    "type-arg",
+    "untyped-decorator",
+    "no-untyped-call",
+    "var-annotated",
+    "call-arg",
+]
 
 [tool.coverage.run]
 source = ["src"]
+
+[tool.coverage.report]
+fail_under = 80
+show_missing = true
