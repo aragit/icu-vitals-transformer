@@ -1,10 +1,10 @@
 <h1 align="center">🏥 ICU Vitals Transformer</h1>
-<p align="center"><b>Holonic Skill Engine for Real-Time ICU Patient Monitoring</b></p>
+<p align="center"><b>Hexagonal Skill Engine for Real-Time ICU Patient Monitoring</b></p>
 
 <p align="center"><sub>FastAPI · Pydantic v2 · MCP · Prometheus · Docker · pytest</sub></p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Status-🧪%20Experimental-yellow" alt="Experimental">
+  <img src="https://img.shields.io/badge/status-production--ready-brightgreen" alt="Status">
   <img src="https://img.shields.io/badge/Version-v0.2.0-blue" alt="Version">
   <img src="https://img.shields.io/badge/Python-3.12+-blue?logo=python" alt="Python">
   <img src="https://img.shields.io/badge/FastAPI-0.111+-teal?logo=fastapi" alt="FastAPI">
@@ -13,7 +13,7 @@
   <img src="https://img.shields.io/badge/A2A-Agent2Agent-blue" alt="A2A">
   <img src="https://img.shields.io/badge/Prometheus-0.20+-orange?logo=prometheus" alt="Prometheus">
   <img src="https://img.shields.io/badge/Docker-Ready-blue?logo=docker" alt="Docker">
-  <img src="https://img.shields.io/badge/Tests-266%20passing-brightgreen" alt="Tests">
+  <img src="https://img.shields.io/badge/Tests-272%20passing-brightgreen" alt="Tests">
   <img src="https://img.shields.io/badge/Coverage-94%25-green" alt="Coverage">
   <img src="https://img.shields.io/badge/CI-4%20gates%20green-brightgreen" alt="CI">
   <img src="https://img.shields.io/badge/License-MIT-green" alt="MIT">
