@@ -99,12 +99,16 @@ hooks are wired at the adapter boundary.
   `patient_id` / `episode_id`).
 - Structured JSON logs carry `correlation_id`, `patient_id`, `episode_id`, and
   the CIMD `requested_by` principal for audit.
-- `X-Request-ID` is echoed on every response; legacy `/vitals/*` routes carry
-  `Deprecation: true` + a `Link` migration hint to v2.
+- `X-Request-ID` is echoed on every response.
 
 ## 4.6 Episode ID Format
 
-Episode IDs use the deterministic format `E-{patient_id}` (see `docs/ADR-001-episode-id-format.md`).
-This format is locked in v0.2.0 and relied upon by e2e tests and the baseline
-contract. Migration to UUIDs is deferred until multi-episode-per-patient readmission
-tracking is required (R2.1+).
+Episode IDs are generated as `E-<uuid>` (a `uuid4` hex truncated to 12 chars,
+prefixed with `E-`, e.g. `E-a3b2c1d4e5f6`) at `create()` time in both
+`InMemoryEpisodeRepository` (`src/adapters/storage/memory.py`) and
+`RedisEpisodeRepository` (`src/adapters/storage/redis.py`) (see
+`docs/ADR-001-episode-id-format.md`). UUIDs eliminate collisions when multiple
+episodes are opened for the same patient, so the active-patient index is now a
+**set** and `get_active_by_patient()` returns the most-recent active episode
+deterministically (by `created_at`). Clients must capture `episode_id` from the
+ingest/open response rather than constructing it.

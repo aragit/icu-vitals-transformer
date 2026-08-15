@@ -1,16 +1,13 @@
-"""Legacy in-memory vital-record store (shared state shim).
+"""In-memory vital-record store (default in-process backend).
 
-Historically the Phase 0 baseline lived in ``src/mcp_server/server.py`` as the
-module-global ``_vitals_store`` dict of raw FHIR records, and baseline
-fixtures reset it via ``from src.mcp_server.server import _vitals_store``.
+Holds the module-global ``_vitals_store`` dict of raw FHIR records consumed by
+the default ``InMemoryVitalsRepository``. Tests reset it directly
+(``from src.vitals_state import _vitals_store``) between cases.
 
-The v1 REST routes (``src/api/routes/vitals.py``) and the legacy MCP surface
-have been retired; that dict now lives dependency-free in this module, and all
-tests import it directly (``from src.vitals_state import _vitals_store``).
-
-⚠️ SINGLE-INSTANCE ONLY / DEPRECATED: prefer ``src.dependencies.get_vitals_repo()``
-for any new code. This shim only exists to keep Phase 0 reset fixtures working
-during the strangler migration.
+⚠️ SINGLE-INSTANCE ONLY. For dev/test or single-replica deployments. Production
+multi-replica deployments MUST use ``src.dependencies.get_vitals_repo()``
+(which selects a network-capable adapter) — these in-process structures do
+NOT replicate across replicas and will lose state on restart / scale-out.
 """
 
 from __future__ import annotations

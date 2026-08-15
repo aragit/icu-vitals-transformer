@@ -94,7 +94,8 @@ async def test_ingest_vitals_v2():
     data = response.json()
     assert data["patient_id"] == "PT-001"
     assert data["heart_rate"] == 72.0
-    assert data["episode_id"] == "E-PT-001"
+    assert data["episode_id"].startswith("E-")
+    assert len(data["episode_id"]) > len("PT-001") + 2  # UUID suffix present
     assert_meta(data)
 
 
@@ -105,7 +106,8 @@ async def test_open_episode_v2():
         response = await client.post("/v2/patients/PT-009/episodes")
     assert response.status_code == 200
     data = response.json()
-    assert data["episode_id"] == "E-PT-009"
+    assert data["episode_id"].startswith("E-")
+    assert len(data["episode_id"]) > len("PT-009") + 2  # UUID suffix present
     assert data["patient_id"] == "PT-009"
     assert_meta(data)
 
@@ -115,15 +117,16 @@ async def test_current_window_v2():
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url=BASE) as client:
         obs = [make_fhir_obs("8867-4", 74.0, patient_id="PT-002")]
-        await client.post(
+        ingest = await client.post(
             "/v2/vitals/ingest",
             json={"patient_id": "PT-002", "observations": obs},
         )
-        response = await client.get("/v2/episodes/E-PT-002/current")
+        episode_id = ingest.json()["episode_id"]
+        response = await client.get(f"/v2/episodes/{episode_id}/current")
     assert response.status_code == 200
     data = response.json()
     assert data["heart_rate"] == 74.0
-    assert data["episode_id"] == "E-PT-002"
+    assert data["episode_id"] == episode_id
     assert_meta(data)
 
 
@@ -135,12 +138,13 @@ async def test_forecast_v2():
             make_fhir_obs("8867-4", 74.0, patient_id="PT-003"),
             make_fhir_obs("8480-6", 97.0, patient_id="PT-003"),
         ]
-        await client.post(
+        ingest = await client.post(
             "/v2/vitals/ingest",
             json={"patient_id": "PT-003", "observations": obs},
         )
+        episode_id = ingest.json()["episode_id"]
         response = await client.get(
-            "/v2/episodes/E-PT-003/forecast?horizon_minutes=60"
+            f"/v2/episodes/{episode_id}/forecast?horizon_minutes=60"
         )
     assert response.status_code == 200
     data = response.json()
@@ -157,15 +161,16 @@ async def test_deterioration_v2():
             make_fhir_obs("8867-4", 74.0, patient_id="PT-004"),
             make_fhir_obs("8480-6", 97.0, patient_id="PT-004"),
         ]
-        await client.post(
+        ingest = await client.post(
             "/v2/vitals/ingest",
             json={"patient_id": "PT-004", "observations": obs},
         )
-        response = await client.get("/v2/episodes/E-PT-004/deterioration")
+        episode_id = ingest.json()["episode_id"]
+        response = await client.get(f"/v2/episodes/{episode_id}/deterioration")
     assert response.status_code == 200
     data = response.json()
     assert "ensemble_score" in data
-    assert data["episode_id"] == "E-PT-004"
+    assert data["episode_id"] == episode_id
     assert_meta(data)
 
 
@@ -174,11 +179,12 @@ async def test_discovery_v2():
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url=BASE) as client:
         obs = [make_fhir_obs("8867-4", 74.0, patient_id="PT-005")]
-        await client.post(
+        ingest = await client.post(
             "/v2/vitals/ingest",
             json={"patient_id": "PT-005", "observations": obs},
         )
-        response = await client.get("/v2/episodes/E-PT-005/discovery")
+        episode_id = ingest.json()["episode_id"]
+        response = await client.get(f"/v2/episodes/{episode_id}/discovery")
     assert response.status_code == 200
     data = response.json()
     assert "heart_rate" in data["channels"]

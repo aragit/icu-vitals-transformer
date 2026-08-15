@@ -1,37 +1,52 @@
-# ADR-001: Deterministic Episode ID Format (E-{patient_id})
+# ADR-001: Episode ID Format
 
 ## Status
-Accepted (v0.9.0)
+- Accepted v0.9.0 — deterministic format `E-{patient_id}`.
+- **Superseded v0.9.1** — migrated to UUID-based format `E-<uuid>` to support
+  multiple concurrent episodes per patient (readmission tracking) and to
+  eliminate ID collisions on the active-patient index.
 
 ## Context
-Episode IDs are generated as `E-{patient_id}` in both `InMemoryEpisodeRepository`
-and `RedisEpisodeRepository`. This format was locked in v0.2.0 and is relied upon
-by e2e tests and baseline contracts (see `docs/BASELINE.md`).
+Episode IDs were generated as `E-{patient_id}` in both
+`InMemoryEpisodeRepository` and `RedisEpisodeRepository`. This deterministic
+format (locked in v0.2.0) assumed a single active episode per patient and
+collided whenever a second episode was created for the same patient — the
+second `create()` overwrote the active index and the MRTR disambiguation
+logic (`src/adapters/mcp.mrtr`) was effectively dead code for the default
+backend.
 
-This was evaluated against an alternative proposal (UUID episode IDs) in the
-v0.9.0 gap audit (Task 2.2) but was not migrated because:
+## Decision (v0.9.1)
+Generate episode IDs as `E-{uuid.uuid4().hex[:12]}` at `create()` time in
+both repositories:
+- `src/adapters/storage/memory.py` → `InMemoryEpisodeRepository.create`
+- `src/adapters/storage/redis.py` → `RedisEpisodeRepository.create`
 
-1. e2e tests hardcode `E-PT-*` patterns.
-2. The baseline lock (BASELINE.md §5.5) records the deterministic format.
-3. No multi-episode-per-patient readmission workflow is in scope for v0.9.0.
+This makes the format `E-<12-hex-char-uuid>`. Both repositories now key their
+active-patient index on a **set** of episode IDs (`dict[str, set[str]]` in
+memory, `SADD`/`SMEMBERS` in Redis), so multiple concurrent episodes per
+patient are tracked and the MRTR disambiguation surface
+(`discover_episode` / `get_all_active_by_patient`) is reachable.
 
-## Decision
-Keep deterministic format `E-{patient_id}` for v0.9.0. Do not migrate to UUIDs
-until multi-episode-per-patient readmission tracking is required (R2.1+).
+`get_active_by_patient()` returns the most recent active episode deterministically
+(ordering by `Episode.created_at`) for both backends; `E-{patient_id}` exact
+value assertions in tests were replaced with `startswith("E-")` + UUID-suffix
+length checks, and tests that need the id now capture it from the ingest
+response.
 
 ## Consequences
-- **Positive**: Backward compatible with all existing tests and client integrations.
-  Episode IDs are human-readable and predictable, simplifying debugging and
-  log correlation.
-- **Negative**: Re-admitting a patient after discharge overwrites/closes the prior
-  episode. This is acceptable because the current FSM does not support readmission
-  workflows. A second concurrent episode for the same patient would collide on the
-  `E-{patient_id}` key.
+- **Positive**: Multiple active episodes per patient are now supported; the
+  active-patient index no longer collides; MRTR disambiguation is reachable
+  in the default backend; ID generation is collision-free.
+- **Negative**: Episode IDs are no longer human-guessable from the patient id;
+  log correlation must use `patient_id` + `episode_id` rather than inferring one
+  from the other.
+- **Migration**: No on-disk format migration is required — in-memory state is
+  ephemeral and Redis episodes are re-created per new admission. Clients must
+  capture `episode_id` from the ingest/open response rather than constructing it.
 
-## Migration Path
-When readmission tracking is needed:
-1. Change `create()` to `f"E-{patient_id}-{uuid4().hex[:8]}"`.
-2. Update e2e tests to use regex matching or capture created IDs dynamically.
-3. Add `get_all_active_by_patient()` disambiguation to MCP/REST surfaces (already
-  partially scaffolded via MRTR elicitation in `src/adapters/mcp/mrtr.py`).
-4. Update `manifests/mcp.json` protocol manifest to document the new ID format.
+## Migration Path (completed)
+1. `create()` → `f"E-{uuid.uuid4().hex[:12]}"` in both repositories.
+2. Tests capture created IDs dynamically from the ingest/open response.
+3. `get_active_by_patient()` made deterministic (latest-by-`created_at`) for
+   both backends; `get_all_active_by_patient()` returns the full active set.
+4. `docs/ARCHITECTURE.md` §4.6 and this ADR updated to the v0.9.1 contract.

@@ -55,9 +55,12 @@ async def test_out_of_order_ingestion_preserves_trend_factor(mcp_server):
                 "observations": [make_fhir_obs("8867-4", hr, patient_id="PT-HR", effective=ts)],
             },
         )
+    episode_id = _payload(
+        await mcp_server.call_tool("discover_episode", {"patient_id": "PT-HR"})
+    )["episode_id"]
     forecast = _payload(
         await mcp_server.call_tool(
-            "get_forecast", {"episode_id": "E-PT-HR", "horizon_minutes": 60}
+            "get_forecast", {"episode_id": episode_id, "horizon_minutes": 60}
         )
     )
     # Least-squares slope is computed across whatever history exists (>=2 pts);
@@ -86,9 +89,12 @@ async def test_steep_rising_trend_clamped_to_ceiling(mcp_server):
                 "observations": [make_fhir_obs("8867-4", hr, patient_id="PT-HI", effective=ts)],
             },
         )
+    episode_id = _payload(
+        await mcp_server.call_tool("discover_episode", {"patient_id": "PT-HI"})
+    )["episode_id"]
     forecast = _payload(
         await mcp_server.call_tool(
-            "get_forecast", {"episode_id": "E-PT-HI", "horizon_minutes": 60}
+            "get_forecast", {"episode_id": episode_id, "horizon_minutes": 60}
         )
     )
     assert forecast["forecasted_vitals"]["heart_rate"] == pytest.approx(300.0, abs=0.01)
@@ -110,9 +116,12 @@ async def test_steep_falling_trend_clamped_to_floor(mcp_server):
                 "observations": [make_fhir_obs("8867-4", hr, patient_id="PT-LO", effective=ts)],
             },
         )
+    episode_id = _payload(
+        await mcp_server.call_tool("discover_episode", {"patient_id": "PT-LO"})
+    )["episode_id"]
     forecast = _payload(
         await mcp_server.call_tool(
-            "get_forecast", {"episode_id": "E-PT-LO", "horizon_minutes": 60}
+            "get_forecast", {"episode_id": episode_id, "horizon_minutes": 60}
         )
     )
     # Steep -720/hr slope from 60 -> clamped to the heart-rate floor (0.0).
@@ -126,7 +135,7 @@ async def test_steep_falling_trend_clamped_to_floor(mcp_server):
 async def test_stale_data_flag_propagated_via_mcp(mcp_server):
     """A >300s-old window raises stale_data_warning through the MCP tool."""
     effective = _iso(datetime.now(timezone.utc) - timedelta(seconds=600))
-    await mcp_server.call_tool(
+    ingest = await mcp_server.call_tool(
         "ingest_vitals",
         {
             "patient_id": "PT-ST",
@@ -136,9 +145,10 @@ async def test_stale_data_flag_propagated_via_mcp(mcp_server):
 
         },
     )
+    episode_id = _payload(ingest)["episode_id"]
     forecast = _payload(
         await mcp_server.call_tool(
-            "get_forecast", {"episode_id": "E-PT-ST", "horizon_minutes": 60}
+            "get_forecast", {"episode_id": episode_id, "horizon_minutes": 60}
         )
     )
     assert forecast["stale_data_warning"] is True
@@ -159,7 +169,8 @@ async def test_fresh_window_has_no_stale_flag(httpx_client):
         },
     )
     assert r.status_code == 200
-    r = await httpx_client.get(f"{_PT}/v2/episodes/E-PT-FRESH/forecast?horizon_minutes=60")
+    fresh_id = r.json()["episode_id"]
+    r = await httpx_client.get(f"{_PT}/v2/episodes/{fresh_id}/forecast?horizon_minutes=60")
     assert r.status_code == 200
     forecast = r.json()
     assert forecast["stale_data_warning"] is False
@@ -179,7 +190,8 @@ async def test_stale_window_flag_via_deterioration_endpoint(httpx_client):
         },
     )
     assert r.status_code == 200
-    r = await httpx_client.get(f"{_PT}/v2/episodes/E-PT-STALE/deterioration")
+    stale_id = r.json()["episode_id"]
+    r = await httpx_client.get(f"{_PT}/v2/episodes/{stale_id}/deterioration")
     assert r.status_code == 200
     payload = r.json()
     assert "stale_data_warning" in payload["contributing_factors"]

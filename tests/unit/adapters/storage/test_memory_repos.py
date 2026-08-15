@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import timedelta
 
 import pytest
 
@@ -117,6 +118,43 @@ class TestEpisodeRepository:
         assert EPISODE_STATE_GAUGE.labels(state="ALERT")._value.get() == 1
         assert EPISODE_STATE_GAUGE.labels(state="NORMAL")._value.get() == 0
         assert EPISODE_STATE_GAUGE.labels(state="WARNING")._value.get() == 0
+
+    async def test_two_episodes_same_patient_are_unique_and_both_active(self) -> None:
+        repo = InMemoryEpisodeRepository()
+        ep1 = await repo.create("PT-001")
+        ep2 = await repo.create("PT-001")
+        assert ep1.episode_id != ep2.episode_id
+        assert ep1.episode_id.startswith("E-")
+        assert ep2.episode_id.startswith("E-")
+        all_active = await repo.get_all_active_by_patient("PT-001")
+        assert len(all_active) == 2
+
+    async def test_get_active_returns_most_recent_by_created_at(self) -> None:
+        repo = InMemoryEpisodeRepository()
+        ep1 = await repo.create("PT-001")
+        ep2 = await repo.create("PT-001")
+        # Make ep1 strictly newer than ep2 in the stored episode.
+        repo._episodes[ep1.episode_id].created_at = ep2.created_at + timedelta(seconds=10)
+        active = await repo.get_active_by_patient("PT-001")
+        assert active is not None and active.episode_id == ep1.episode_id
+        ordered = await repo.get_all_active_by_patient("PT-001")
+        assert [e.episode_id for e in ordered] == [ep1.episode_id, ep2.episode_id]
+
+    async def test_transition_emergency_removes_only_transitioned_episode(self) -> None:
+        repo = InMemoryEpisodeRepository()
+        ep1 = await repo.create("PT-001")
+        ep2 = await repo.create("PT-001")
+        repo._episodes[ep1.episode_id].created_at = ep2.created_at + timedelta(seconds=10)
+        assessment = DeteriorationAssessment(
+            patient_id="PT-001",
+            ensemble_score=18.0,
+            severity="EMERGENCY",
+            contributing_factors=["heart_rate_critical"],
+        )
+        await repo.transition(ep1.episode_id, "deterioration_assessment", assessment)
+        remaining = await repo.get_all_active_by_patient("PT-001")
+        assert len(remaining) == 1
+        assert remaining[0].episode_id == ep2.episode_id
 
 
 class TestAssessmentRepository:

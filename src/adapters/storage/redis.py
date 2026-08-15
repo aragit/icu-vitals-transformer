@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json as _json
 import logging
+import uuid
 from datetime import datetime
 from typing import Any
 
@@ -89,7 +90,8 @@ class RedisEpisodeRepository(EpisodeRepository):
         return "episodes:state_counts"
 
     async def create(self, patient_id: str) -> Episode:
-        episode = Episode(episode_id=f"E-{patient_id}", patient_id=patient_id)
+        episode_id = f"E-{uuid.uuid4().hex[:12]}"
+        episode = Episode(episode_id=episode_id, patient_id=patient_id)
         await self._upsert(episode)
         await self._redis.sadd(self._active_key(patient_id), episode.episode_id)
         return episode
@@ -104,8 +106,14 @@ class RedisEpisodeRepository(EpisodeRepository):
         members: Any = await self._redis.smembers(self._active_key(patient_id))
         if not members:
             return None
-        first = next(iter(members))
-        return await self.get(str(first))
+        episodes: list[Episode] = []
+        for member in members:
+            ep = await self.get(str(member))
+            if ep is not None:
+                episodes.append(ep)
+        if not episodes:
+            return None
+        return max(episodes, key=lambda ep: ep.created_at)
 
     async def get_all_active_by_patient(self, patient_id: str) -> list[Episode]:
         members: Any = await self._redis.smembers(self._active_key(patient_id))

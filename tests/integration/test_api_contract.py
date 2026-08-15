@@ -97,7 +97,8 @@ class TestIngestContract:
         assert data["systolic_bp"] == 120.0
         assert data["spo2"] == 98.0
         assert data["temperature"] == 36.5
-        assert data["episode_id"] == "E-PT-001"
+        assert data["episode_id"].startswith("E-")
+        assert len(data["episode_id"]) > len("PT-001") + 2  # UUID suffix present
         assert_meta(data)
 
     def test_ingest_empty_observations_returns_400(self):

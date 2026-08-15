@@ -81,7 +81,8 @@ async def test_ingest_vitals_returns_meta(mcp_server):
     )
     payload = _text(result)
     assert payload["heart_rate"] == 72.0
-    assert payload["episode_id"] == "E-PT-M1"
+    assert payload["episode_id"].startswith("E-")
+    assert len(payload["episode_id"]) > len("PT-M1") + 2  # UUID suffix present
     _meta = payload["_meta"]
     assert _meta["clinical_disclaimer"]
     assert isinstance(_meta["data_freshness_seconds"], int)
@@ -89,12 +90,13 @@ async def test_ingest_vitals_returns_meta(mcp_server):
 
 @pytest.mark.asyncio
 async def test_forecast_tool_returns_meta(mcp_server):
-    await mcp_server.call_tool(
+    ingest = await mcp_server.call_tool(
         "ingest_vitals",
         {"patient_id": "PT-M2", "observations": [_obs("PT-M2", 72.0)]},
     )
+    episode_id = _text(ingest)["episode_id"]
     result = await mcp_server.call_tool(
-        "get_forecast", {"episode_id": "E-PT-M2", "horizon_minutes": 60}
+        "get_forecast", {"episode_id": episode_id, "horizon_minutes": 60}
     )
     payload = _text(result)
     assert "forecasted_vitals" in payload
@@ -105,12 +107,13 @@ async def test_forecast_tool_returns_meta(mcp_server):
 
 @pytest.mark.asyncio
 async def test_deterioration_index_returns_meta(mcp_server):
-    await mcp_server.call_tool(
+    ingest = await mcp_server.call_tool(
         "ingest_vitals",
         {"patient_id": "PT-M3", "observations": [_obs("PT-M3", 72.0)]},
     )
+    episode_id = _text(ingest)["episode_id"]
     result = await mcp_server.call_tool(
-        "get_deterioration_index", {"episode_id": "E-PT-M3"}
+        "get_deterioration_index", {"episode_id": episode_id}
     )
     payload = _text(result)
     assert "ensemble_score" in payload
@@ -121,13 +124,14 @@ async def test_deterioration_index_returns_meta(mcp_server):
 
 @pytest.mark.asyncio
 async def test_discover_episode_returns_meta(mcp_server):
-    await mcp_server.call_tool(
+    ingest = await mcp_server.call_tool(
         "ingest_vitals",
         {"patient_id": "PT-M4", "observations": [_obs("PT-M4", 72.0)]},
     )
+    episode_id = _text(ingest)["episode_id"]
     result = await mcp_server.call_tool("discover_episode", {"patient_id": "PT-M4"})
     payload = _text(result)
-    assert payload["episode_id"] == "E-PT-M4"
+    assert payload["episode_id"] == episode_id
     _meta = payload["_meta"]
     assert _meta["clinical_disclaimer"]
 

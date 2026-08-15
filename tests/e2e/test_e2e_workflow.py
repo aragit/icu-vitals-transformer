@@ -55,21 +55,23 @@ async def test_rest_v2_full_lifecycle(httpx_client):
     ingest = r.json()
     _check_meta(ingest)
     assert ingest["heart_rate"] == 72.0
+    episode_id = ingest["episode_id"]
+    assert episode_id.startswith("E-")
 
-    r = await httpx_client.get(f"{_BASE}/v2/episodes/E-PT-E2E/forecast?horizon_minutes=60")
+    r = await httpx_client.get(f"{_BASE}/v2/episodes/{episode_id}/forecast?horizon_minutes=60")
     assert r.status_code == 200
     forecast = r.json()
     _check_meta(forecast)
     assert "forecasted_vitals" in forecast
 
-    r = await httpx_client.get(f"{_BASE}/v2/episodes/E-PT-E2E/deterioration")
+    r = await httpx_client.get(f"{_BASE}/v2/episodes/{episode_id}/deterioration")
     assert r.status_code == 200
     assessment = r.json()
     _check_meta(assessment)
     assert "ensemble_score" in assessment
-    assert assessment["episode_id"] == "E-PT-E2E"
+    assert assessment["episode_id"] == episode_id
 
-    r = await httpx_client.get(f"{_BASE}/v2/episodes/E-PT-E2E/discovery")
+    r = await httpx_client.get(f"{_BASE}/v2/episodes/{episode_id}/discovery")
     assert r.status_code == 200
     discovery = r.json()
     _check_meta(discovery)
@@ -88,16 +90,17 @@ async def test_mcp_full_lifecycle(mcp_server):
     ingest = _mcp_payload(ingest)
     _check_meta(ingest)
     assert ingest["heart_rate"] == 72.0
+    episode_id = ingest["episode_id"]
 
     forecast = await mcp_server.call_tool(
-        "get_forecast", {"episode_id": "E-PT-E2E", "horizon_minutes": 60}
+        "get_forecast", {"episode_id": episode_id, "horizon_minutes": 60}
     )
     forecast = _mcp_payload(forecast)
     _check_meta(forecast)
     assert "forecasted_vitals" in forecast
 
     assessment = await mcp_server.call_tool(
-        "get_deterioration_index", {"episode_id": "E-PT-E2E"}
+        "get_deterioration_index", {"episode_id": episode_id}
     )
     assessment = _mcp_payload(assessment)
     _check_meta(assessment)
@@ -106,7 +109,7 @@ async def test_mcp_full_lifecycle(mcp_server):
     discovery = await mcp_server.call_tool("discover_episode", {"patient_id": "PT-E2E"})
     discovery = _mcp_payload(discovery)
     _check_meta(discovery)
-    assert discovery["episode_id"] == "E-PT-E2E"
+    assert discovery["episode_id"] == episode_id
 
 
 @pytest.mark.asyncio
@@ -120,8 +123,10 @@ async def test_mcp_trend_extrapolation_end_to_end(mcp_server, _trend_history):
                 "observations": [make_fhir_obs("8867-4", hr, patient_id="PT-HR", effective=ts)],
             },
         )
+    episode_id = (await mcp_server.call_tool("discover_episode", {"patient_id": "PT-HR"}))
+    episode_id = _mcp_payload(episode_id)["episode_id"]
     forecast = await mcp_server.call_tool(
-        "get_forecast", {"episode_id": "E-PT-HR", "horizon_minutes": 60}
+        "get_forecast", {"episode_id": episode_id, "horizon_minutes": 60}
     )
     forecast = _mcp_payload(forecast)
     hr = forecast["forecasted_vitals"]["heart_rate"]
@@ -144,7 +149,7 @@ async def test_v2_ingest_resolves_episode_and_window(httpx_client):
     )
     assert r.status_code == 200
     body = r.json()
-    assert body["episode_id"] == "E-PT-PARITY"
+    assert body["episode_id"].startswith("E-")
     assert body["patient_id"] == "PT-PARITY"
     assert body["heart_rate"] == 76.0
     assert body["systolic_bp"] == 118.0

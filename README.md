@@ -263,7 +263,7 @@ async with stdio_client(params) as (read, write):
         await session.initialize()
         tools = await session.list_tools()
         result = await session.call_tool("get_deterioration_index", {
-            "episode_id": "E-PT-001"
+            "episode_id": "E-<uuid>"  # capture from ingest/open response
         })
 ```
 
@@ -296,7 +296,7 @@ JSON-formatted logs with correlation IDs, patient_id, episode_id, and tool_name 
   "level": "INFO",
   "message": "Forecast generated",
   "correlation_id": "abc-123",
-  "episode_id": "E-PT-001",
+   "episode_id": "E-a3b2c1d4e5f6",
   "patient_id": "PT-001",
   "tool_name": "get_forecast",
   "deterioration_index": 4,
@@ -314,7 +314,7 @@ pytest -v --cov=src --cov-report=term-missing --cov-fail-under=92
 
 ## 🧭 Architecture Decisions
 
-See [`docs/ADR-001-episode-id-format.md`](docs/ADR-001-episode-id-format.md) for the decision to retain deterministic `E-{patient_id}` episode IDs in v0.9.x.
+See [`docs/ADR-001-episode-id-format.md`](docs/ADR-001-episode-id-format.md) for the episode ID format (`E-<uuid>`); IDs are generated at episode creation — clients must capture `episode_id` from the ingest/open response rather than constructing it.
 
 ## 💡 Contributing
 

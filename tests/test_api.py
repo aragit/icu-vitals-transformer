@@ -80,7 +80,9 @@ async def test_ingest_vitals():
     data = response.json()
     assert data["patient_id"] == "PT-001"
     assert data["heart_rate"] == 72.0
-    assert data["episode_id"] == "E-PT-001"
+    episode_id = data["episode_id"]
+    assert episode_id.startswith("E-")
+    assert len(episode_id) > len("PT-001") + 2  # UUID suffix present
     assert_meta(data)
 
 

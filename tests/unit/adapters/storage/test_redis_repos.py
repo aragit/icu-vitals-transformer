@@ -103,17 +103,22 @@ class TestRedisVitalsRepository:
 class TestRedisEpisodeRepository:
     async def test_create_and_active_lookup(self) -> None:
         redis = _mock_redis(
-            hgetall=AsyncMock(return_value=_hash_from_episode("E-PT-001", "PT-001")),
-            smembers=AsyncMock(return_value={"E-PT-001"}),
+            hgetall=AsyncMock(return_value={}),
+            smembers=AsyncMock(return_value=set()),
         )
         repo = RedisEpisodeRepository(client=redis)
         ep = await repo.create("PT-001")
-        assert ep.episode_id == "E-PT-001"
+        assert ep.episode_id.startswith("E-")
+        assert len(ep.episode_id) > len("PT-001") + 2  # UUID suffix present
         assert ep.patient_id == "PT-001"
+        # Point the mocks at the generated episode id so read-back matches.
+        created_hash = _hash_from_episode(ep.episode_id, "PT-001")
+        redis.hgetall = AsyncMock(return_value=created_hash)
+        redis.smembers = AsyncMock(return_value={ep.episode_id})
         fetched = await repo.get(ep.episode_id)
-        assert fetched is not None and fetched.episode_id == "E-PT-001"
+        assert fetched is not None and fetched.episode_id == ep.episode_id
         active = await repo.get_active_by_patient("PT-001")
-        assert active is not None and active.episode_id == "E-PT-001"
+        assert active is not None and active.episode_id == ep.episode_id
 
     async def test_get_returns_none_when_unknown(self) -> None:
         redis = _mock_redis(hgetall=AsyncMock(return_value={}))

@@ -16,6 +16,7 @@ observations automatically and bound memory growth.
 from __future__ import annotations
 
 import asyncio
+import uuid
 from collections import deque
 
 from src.core.domain.episode import Episode, EpisodeState
@@ -79,14 +80,15 @@ class InMemoryEpisodeRepository(EpisodeRepository):
     def __init__(self) -> None:
         self._lock = asyncio.Lock()
         self._episodes: dict[str, Episode] = {}
-        self._active_by_patient: dict[str, str] = {}
+        self._active_by_patient: dict[str, set[str]] = {}
         self._windows: dict[str, VitalSignsWindow] = {}
 
     async def create(self, patient_id: str) -> Episode:
         async with self._lock:
-            episode = Episode(episode_id=f"E-{patient_id}", patient_id=patient_id)
+            episode_id = f"E-{uuid.uuid4().hex[:12]}"
+            episode = Episode(episode_id=episode_id, patient_id=patient_id)
             self._episodes[episode.episode_id] = episode
-            self._active_by_patient[patient_id] = episode.episode_id
+            self._active_by_patient.setdefault(patient_id, set()).add(episode.episode_id)
             return episode
 
     async def get(self, episode_id: str) -> Episode | None:
@@ -94,20 +96,28 @@ class InMemoryEpisodeRepository(EpisodeRepository):
             return self._episodes.get(episode_id)
 
     async def get_active_by_patient(self, patient_id: str) -> Episode | None:
+        """Return the most recent active episode for a patient (by created_at)."""
         async with self._lock:
-            episode_id = self._active_by_patient.get(patient_id)
-            if episode_id is None:
+            episode_ids = self._active_by_patient.get(patient_id)
+            if not episode_ids:
                 return None
-            return self._episodes.get(episode_id)
+            episodes = [
+                self._episodes[eid] for eid in episode_ids if eid in self._episodes
+            ]
+            if not episodes:
+                return None
+            return max(episodes, key=lambda ep: ep.created_at)
 
     async def get_all_active_by_patient(self, patient_id: str) -> list[Episode]:
-        """Return all currently-active episodes for a patient (usually 1)."""
+        """Return all currently-active episodes for a patient, newest first."""
         async with self._lock:
-            episode_id = self._active_by_patient.get(patient_id)
-            if episode_id is None:
+            episode_ids = self._active_by_patient.get(patient_id)
+            if not episode_ids:
                 return []
-            episode = self._episodes.get(episode_id)
-            return [episode] if episode is not None else []
+            episodes = [
+                self._episodes[eid] for eid in episode_ids if eid in self._episodes
+            ]
+            return sorted(episodes, key=lambda ep: ep.created_at, reverse=True)
 
     async def transition(
         self,
@@ -130,7 +140,11 @@ class InMemoryEpisodeRepository(EpisodeRepository):
             # An EMERGENCY/critical transition marks the episode no longer
             # "active" for new auto-creation lookups of the same patient.
             if state in (EpisodeState.EMERGENCY,):
-                self._active_by_patient.pop(episode.patient_id, None)
+                active_set = self._active_by_patient.get(episode.patient_id)
+                if active_set:
+                    active_set.discard(episode_id)
+                    if not active_set:
+                        self._active_by_patient.pop(episode.patient_id, None)
 
             state_counts: dict[str, int] = {}
             for ep in self._episodes.values():

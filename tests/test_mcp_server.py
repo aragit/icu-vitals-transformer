@@ -65,17 +65,19 @@ async def test_ingest_single_observation(mcp_server):
     data = _text(result)
     assert data["patient_id"] == "PT-001"
     assert data["heart_rate"] == 72.0
-    assert data["episode_id"] == "E-PT-001"
+    assert data["episode_id"].startswith("E-")
+    assert len(data["episode_id"]) > len("PT-001") + 2  # UUID suffix present
     assert "_meta" in data
 
 
 @pytest.mark.asyncio
 async def test_forecast_after_ingest(mcp_server):
-    await mcp_server.call_tool(
+    ingest = await mcp_server.call_tool(
         "ingest_vitals", {"patient_id": "PT-002", "observations": [_obs("PT-002", 72.0)]}
     )
+    episode_id = _text(ingest)["episode_id"]
     result = await mcp_server.call_tool(
-        "get_forecast", {"episode_id": "E-PT-002", "horizon_minutes": 60}
+        "get_forecast", {"episode_id": episode_id, "horizon_minutes": 60}
     )
     payload = _text(result)
     assert "forecasted_vitals" in payload
@@ -85,12 +87,15 @@ async def test_forecast_after_ingest(mcp_server):
 
 @pytest.mark.asyncio
 async def test_deterioration_normal(mcp_server):
-    await mcp_server.call_tool(
+    ingest = await mcp_server.call_tool(
         "ingest_vitals", {"patient_id": "PT-003", "observations": [_obs("PT-003", 72.0)]}
     )
-    result = await mcp_server.call_tool("get_deterioration_index", {"episode_id": "E-PT-003"})
+    episode_id = _text(ingest)["episode_id"]
+    result = await mcp_server.call_tool(
+        "get_deterioration_index", {"episode_id": episode_id}
+    )
     data = _text(result)
-    assert data["episode_id"] == "E-PT-003"
+    assert data["episode_id"].startswith("E-")
     assert data["severity"] == "NORMAL"
     assert data["ensemble_score"] == 0.0
     assert isinstance(data["contributing_factors"], list)
@@ -99,21 +104,25 @@ async def test_deterioration_normal(mcp_server):
 @pytest.mark.asyncio
 async def test_deterioration_emergency(mcp_server):
     observations = [_obs("PT-004", value, loinc=loinc) for loinc, value in CRITICAL]
-    await mcp_server.call_tool(
+    ingest = await mcp_server.call_tool(
         "ingest_vitals", {"patient_id": "PT-004", "observations": observations}
     )
-    result = await mcp_server.call_tool("get_deterioration_index", {"episode_id": "E-PT-004"})
+    episode_id = _text(ingest)["episode_id"]
+    result = await mcp_server.call_tool(
+        "get_deterioration_index", {"episode_id": episode_id}
+    )
     data = _text(result)
-    assert data["episode_id"] == "E-PT-004"
+    assert data["episode_id"].startswith("E-")
     assert data["severity"] == "EMERGENCY"
     assert len(data["contributing_factors"]) > 0
 
 
 @pytest.mark.asyncio
 async def test_discover_episode_after_ingest(mcp_server):
-    await mcp_server.call_tool(
+    ingest = await mcp_server.call_tool(
         "ingest_vitals", {"patient_id": "PT-005", "observations": [_obs("PT-005", 72.0)]}
     )
+    episode_id = _text(ingest)["episode_id"]
     result = await mcp_server.call_tool("discover_episode", {"patient_id": "PT-005"})
     data = _text(result)
-    assert data["episode_id"] == "E-PT-005"
+    assert data["episode_id"] == episode_id
