@@ -43,7 +43,7 @@ This document describes the v0.2.0 Hexagonal / Onion reference architecture for
 | **Driven Adapters** | `src/adapters/storage/*` | In-memory (dev) and Redis (multi-replica production) repository impls. |
 | **Observability** | `src/observability/*` | Label-free Prometheus metrics + JSON structured logging. |
 | **Auth** | `src/auth/*` | CIMD/JWT bearer-token principal extraction (adapter-bound). |
-| **Protocols** | `manifests/*` | `mcp.json`, `SKILL.md`, `AGENT_CARD.json` — discoverable capability surface. |
+| **Protocols** | `manifests/*` | `mcp.json`, `SKILL.md` — discoverable capability surface. |
 
 ## 4.2 Hexagonal Inward Dependency Rule
 

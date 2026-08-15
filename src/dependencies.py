@@ -2,7 +2,7 @@
 
 Holds the singleton repositories and the ``ClinicalAssessmentService`` wired with
 a ``SafetyShell`` around the deterministic forecast backend. New adapters (REST
-routes, MCP tools, A2A skills) pull shared state from here rather than touching
+routes, MCP tools) pull shared state from here rather than touching
 module-level globals.
 
 Backend selection: ``REPOSITORY_BACKEND=redis`` activates the multi-replica

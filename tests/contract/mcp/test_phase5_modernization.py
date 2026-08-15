@@ -55,7 +55,6 @@ def mcp_server():
 def test_manifests_exist():
     assert os.path.isfile(os.path.join(_MANIFESTS, "mcp.json"))
     assert os.path.isfile(os.path.join(_MANIFESTS, "SKILL.md"))
-    assert os.path.isfile(os.path.join(_MANIFESTS, "AGENT_CARD.json"))
 
 
 def test_mcp_json_manifest_valid_json():
@@ -73,14 +72,6 @@ def test_mcp_json_manifest_valid_json():
     assert "clinical://loinc-mapping/v1" in resources
     assert manifest["execution"]["_meta"]["determinism"] == "deterministic"
     assert manifest["execution"]["_meta"]["side_effects"] is False
-
-
-def test_agent_card_valid_json():
-    with open(os.path.join(_MANIFESTS, "AGENT_CARD.json")) as fh:
-        card = json.load(fh)
-    assert card["name"] == "icu-vitals-transformer"
-    assert "streamable-http" in json.dumps(card["protocols"]["mcp"])
-    assert card["operationalGuardrails"]["phiInMetrics"] is False
 
 
 def test_skill_markdown_is_markdown():

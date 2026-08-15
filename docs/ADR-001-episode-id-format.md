@@ -34,5 +34,4 @@ When readmission tracking is needed:
 2. Update e2e tests to use regex matching or capture created IDs dynamically.
 3. Add `get_all_active_by_patient()` disambiguation to MCP/REST surfaces (already
   partially scaffolded via MRTR elicitation in `src/adapters/mcp/mrtr.py`).
-4. Update `manifests/AGENT_CARD.json` and `manifests/mcp.json` protocol manifests
-   to document the new ID format.
+4. Update `manifests/mcp.json` protocol manifest to document the new ID format.

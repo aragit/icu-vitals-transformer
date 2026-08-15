@@ -1,6 +1,6 @@
 <h1 align="center">ICU Vitals Transformer</h1>
 <p align="center">
-  <b>Hexagonal Skill Engine — Deterministic Clinical Forecasting via MCP & A2A</b>
+  <b>Hexagonal Skill Engine — Deterministic Clinical Forecasting via MCP</b>
 </p>
 <p align="center">
   <a href="#"><img src="https://img.shields.io/badge/status-production--ready-brightgreen" alt="Status"></a>
@@ -9,7 +9,6 @@
   <a href="#"><img src="https://img.shields.io/badge/FastAPI-0.111+-teal?logo=fastapi" alt="FastAPI"></a>
   <a href="#"><img src="https://img.shields.io/badge/Pydantic_v2-2.7+-purple?logo=pydantic" alt="Pydantic"></a>
   <a href="#"><img src="https://img.shields.io/badge/MCP-2026--07--28-black?logo=modelcontextprotocol" alt="MCP"></a>
-  <a href="#"><img src="https://img.shields.io/badge/A2A-Agent2Agent-blue" alt="A2A"></a>
   <a href="#"><img src="https://img.shields.io/badge/Prometheus-0.20+-orange?logo=prometheus" alt="Prometheus"></a>
   <a href="#"><img src="https://img.shields.io/badge/Docker-Ready-blue?logo=docker" alt="Docker"></a>
   <a href="#"><img src="https://img.shields.io/badge/Tests-342%20passing-brightgreen" alt="Tests"></a>
@@ -44,7 +43,6 @@
 - [Configuration](#-configuration)
 - [API Reference](#-api-reference)
 - [MCP Tools](#-mcp-tools)
-- [A2A (Agent-to-Agent) Facade](#-a2a-agent-to-agent-facade)
 - [Observability](#-observability)
 - [Testing](#-testing)
 - [Architecture Decisions](#-architecture-decisions)
@@ -67,7 +65,7 @@
 ## 📖 What This Is
 
 Most clinical AI demos are black-box neural nets wrapped in disclaimers. This is the opposite: a deterministic, symbolic clinical skill that forecasts patient deterioration from FHIR R4 vitals using nothing more than linear trend extrapolation — fully explainable, fully testable, and fully bounded by a SafetyShell invariant gate.
-It is designed as a reference implementation for how to build high-integrity AI tools using the Model Context Protocol (MCP). The architecture is protocol-native, not protocol-adapted: the clinical logic lives in a pure-Python hexagonal core with zero framework dependencies, while MCP, REST, and A2A surfaces are thin, swappable adapters.
+It is designed as a reference implementation for how to build high-integrity AI tools using the Model Context Protocol (MCP). The architecture is protocol-native, not protocol-adapted: the clinical logic lives in a pure-Python hexagonal core with zero framework dependencies, while MCP and REST surfaces are thin, swappable adapters.
 
 **Who this is for**: AI engineers building clinical agent architectures (e.g., AXIOMIS, SentriXIA) who need a trustworthy, deterministic baseline they can compose, extend, and audit — not a magic box they have to trust.
 
@@ -83,14 +81,14 @@ It is designed as a reference implementation for how to build high-integrity AI 
 | SafetyShell | Invariant gate: physiological bound clamping, stale-data warning (> 300 s), fail-closed fallback on exception |
 | DDS Scoring | Deterministic Deterioration Score (0–20) with explicit contributing factors; severity mapped to episode state |
 | Episode FSM | Episode lifecycle tracking (NORMAL → WARNING → ALERT → EMERGENCY) with deterministic transitions |
-| Multi-Transport | MCP (stdio / Streamable HTTP), REST v2, A2A facade |
+| Multi-Transport | MCP (stdio / Streamable HTTP), REST v2 |
 | Pluggable Storage | In-memory (dev) or Redis (multi-replica, sorted-set time series, 30-day TTL) |
 | Observability | Label-free Prometheus metrics + structured JSON logging with correlation IDs |
-| Protocol Manifests | mcp.json, SKILL.md, AGENT_CARD.json for capability negotiation |
+| Protocol Manifests | mcp.json, SKILL.md for capability negotiation |
 
 ## 🏗️ Architecture
 
-`icu-vitals-transformer` is a **Hexagonal Skill Engine**: clinical logic lives in a pure-Python core (`src/core/`) that depends only on the standard library + Pydantic. Adapters handle REST v2, MCP, A2A, Redis/memory storage, Prometheus observability, and CIMD/JWT auth at the outer rings.
+`icu-vitals-transformer` is a **Hexagonal Skill Engine**: clinical logic lives in a pure-Python core (`src/core/`) that depends only on the standard library + Pydantic. Adapters handle REST v2, MCP, Redis/memory storage, Prometheus observability, and CIMD/JWT auth at the outer rings.
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`docs/SAFETY.md`](docs/SAFETY.md), and [`docs/MIGRATION.md`](docs/MIGRATION.md).
 
@@ -107,7 +105,7 @@ See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`docs/SAFETY.md`](docs/SAFE
 | **Core Domain** | `src/core/domain/*` | Pure Pydantic v2 vital/episode/forecast/assessment contracts |
 | **Core Engines** | `src/core/{forecasting,governance,ingestion,windowing,services,safety}` | Deterministic trend extrapolation, DDS, FHIR parsing, episode FSM, SafetyShell |
 | **Driven Ports** | `src/ports/*.py` | VitalRepository, EpisodeRepository, AssessmentRepository, ForecastBackend protocols |
-| **Driving Adapters** | `src/adapters/{rest,mcp,a2a}` | REST v2, FastMCP (stdio/http), A2A, observability, CIMD auth |
+| **Driving Adapters** | `src/adapters/{rest,mcp}` | REST v2, FastMCP (stdio/http), observability, CIMD auth |
 | **Driven Adapters** | `src/adapters/storage/*` | In-memory (dev) and Redis (multi-replica) repository impls |
 | **Observability** | `src/observability/*` | Label-free Prometheus metrics + JSON structured logging |
 
@@ -148,7 +146,6 @@ AVPU = Unresponsive automatically scores +3 (altered consciousness). Trend persi
 - **Pluggable backends** — ForecastBackend protocol allows alternative implementations (neural, API-based)
 - **Pluggable repositories** — VitalsRepository/EpisodeRepository ports allow in-memory (dev) or Redis (multi-replica) storage
 - **MCP 2026-07-28** — stdio and Streamable HTTP transports; capability negotiation; discover_capabilities tool
-- **A2A** — Agent-to-Agent task & discovery facade (feature-flagged)
 - **Prometheus** — label-free observability metrics (no patient_id/episode_id labels)
 - **CIMD/JWT** — bearer-token principal extraction for audit trails
 
@@ -185,9 +182,8 @@ docker compose -f docker/docker-compose.yml up --build
 | `PORT` | `8000` | Server port |
 | `FORECAST_HORIZONS` | `[60, 240, 720]` | Forecast horizons in minutes (1h, 4h, 12h) |
 | `MCP_SERVER_NAME` | `icu-vitals-transformer` | MCP server name |
-| `MCP_TRANSPORT` | `stdio` | MCP transport: `stdio (dev) or http (Streamable HTTP) |
 | `REPOSITORY_BACKEND` | `memory` | Storage backend: `memory` (dev) or `redis` (multi-replica) |
-| `A2A_ENABLED` | `false` | Enable the A2A facade (`GET /.well-known/agent.json`, `POST /a2a/tasks`) |
+| `MCP_TRANSPORT` | `stdio` | MCP transport selector (env var) |
 
 ## 📡 API Reference
 
@@ -270,29 +266,6 @@ async with stdio_client(params) as (read, write):
             "episode_id": "E-PT-001"
         })
 ```
-
-## 🤝 A2A (Agent-to-Agent) Facade
-
-`icu-vitals-transformer` exposes an A2A skill facade (not a full agent), feature-flagged behind `A2A_ENABLED=true`:
-
-- `GET /.well-known/agent.json` — dynamically generated A2A Agent Card from `settings.host`/`settings.port`.
-- `POST /a2a/tasks` — execute a task (action ∈ `ingest_vitals`, `get_forecast`, `get_deterioration_index`); returns a standard A2A Artifact whose `data` part carries the clinical result + the `_meta` safety envelope.
-
-```bash
-A2A_ENABLED=true uvicorn src.main:app --reload --port 8001
-
-# Discover capabilities
-curl http://localhost:8001/.well-known/agent.json
-
-# Ingest via A2A
-curl -X POST http://localhost:8001/a2a/tasks \
-  -H "Content-Type: application/json" \
-  -d '{"id":"t1","message":{"role":"user","parts":[{"kind":"data","data":{
-        "action":"ingest_vitals",
-        "parameters":{"patient_id":"PT-001","observations":[...]}}}]}}'
-```
-
-When `A2A_ENABLED=false` (default), both A2A routes return **404** and the REST v2 / MCP surfaces are unaffected.
 
 ## 📈 Observability
 
