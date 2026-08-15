@@ -15,6 +15,7 @@
   <a href="#"><img src="https://img.shields.io/badge/Tests-342%20passing-brightgreen" alt="Tests"></a>
   <a href="#"><img src="https://img.shields.io/badge/Coverage-94.57%25-green" alt="Coverage"></a>
   <a href="#"><img src="https://img.shields.io/badge/CI-4%20gates%20green-brightgreen" alt="CI"></a>
+  <a href="https://github.com/aragit/icu-vitals-transformer/blob/main/CITATION.cff"><img src="https://img.shields.io/badge/Cite%20this-Repository-blue?logo=GitHub" alt="Cite this repository"></a>
   <a href="#"><img src="https://img.shields.io/badge/License-MIT-green" alt="MIT"></a>
 </p>
 
@@ -355,6 +356,31 @@ pytest --cov=src --cov-fail-under=92
 Commit with clear messages (`fix(clinical): ...`, `feat(adapter): ...`, `docs: ...`) → Open a pull request.
 
 **Core isolation is mandatory.** Any PR that introduces `fastapi`, `mcp`, `prometheus_client`, `redis`, or `numpy` imports into `src/core/` or `src/ports/` will be rejected by CI.
+
+## Citation
+
+If you use `icu-vitals-transformer` in your research, clinical agent architecture, or multi-agent orchestration work, please cite it as follows:
+
+### BibTeX
+
+```bibtex
+@software{icu_vitals_transformer_2026,
+  author       = {Arash},
+  title        = {ICU Vitals Transformer: A Hexagonal Skill Engine for Deterministic Clinical Forecasting},
+  year         = 2026,
+  version      = {0.9.1},
+  url          = {https://github.com/aragit/icu-vitals-transformer},
+  note         = {Reference architecture for MCP-native clinical skills with SafetyShell invariant gates}
+}
+```
+
+### APA
+
+Arash. (2026). *ICU Vitals Transformer: A Hexagonal Skill Engine for Deterministic Clinical Forecasting* (Version 0.9.1) [Computer software]. https://github.com/aragit/icu-vitals-transformer
+
+### IEEE
+
+Arash, "ICU Vitals Transformer: A Hexagonal Skill Engine for Deterministic Clinical Forecasting," GitHub repository, 2026. [Online]. Available: https://github.com/aragit/icu-vitals-transformer
 
 ## License
 

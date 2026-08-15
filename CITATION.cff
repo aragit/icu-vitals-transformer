@@ -1,0 +1,23 @@
+cff-version: 1.2.0
+message: "If you use this software in your research or clinical agent architecture, please cite it as below."
+type: software
+title: "ICU Vitals Transformer: A Hexagonal Skill Engine for Deterministic Clinical Forecasting"
+abstract: "A reference architecture for safety-first clinical AI skills using the Model Context Protocol (MCP). Provides deterministic deterioration forecasting from FHIR R4 vital signs via a pure-Python hexagonal core with invariant-guarded SafetyShell."
+authors:
+  - name: "Arash"
+    url: "https://github.com/aragit"
+repository-code: "https://github.com/aragit/icu-vitals-transformer"
+license: MIT
+version: 0.9.1
+date-released: 2026-08-15
+keywords:
+  - clinical-ai
+  - model-context-protocol
+  - mcp
+  - agentic-ai
+  - fhir
+  - vital-signs
+  - deterioration-index
+  - deterministic-forecasting
+  - hexagonal-architecture
+  - safety-shell
