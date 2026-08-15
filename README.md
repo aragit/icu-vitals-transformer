@@ -361,7 +361,7 @@ Commit with clear messages (`fix(clinical): ...`, `feat(adapter): ...`, `docs: .
 
 If you use `icu-vitals-transformer` in your research, clinical agent architecture, or multi-agent orchestration work, please cite it as follows:
 
-### BibTeX
+
 
 ```bibtex
 @software{icu_vitals_transformer_2026,
@@ -374,13 +374,6 @@ If you use `icu-vitals-transformer` in your research, clinical agent architectur
 }
 ```
 
-### APA
-
-Arash. (2026). *ICU Vitals Transformer: A Hexagonal Skill Engine for Deterministic Clinical Forecasting* (Version 0.9.1) [Computer software]. https://github.com/aragit/icu-vitals-transformer
-
-### IEEE
-
-Arash, "ICU Vitals Transformer: A Hexagonal Skill Engine for Deterministic Clinical Forecasting," GitHub repository, 2026. [Online]. Available: https://github.com/aragit/icu-vitals-transformer
 
 ## License
 
