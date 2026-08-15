@@ -17,7 +17,7 @@ entirely under ``src/adapters/`` — the hex core (``src/core/``,
 
 from __future__ import annotations
 
-from src.adapters.a2a.discovery import load_agent_card
+from src.adapters.a2a.discovery import build_agent_card, load_agent_card
 from src.adapters.a2a.task_handler import A2ATaskHandler
 
-__all__ = ["load_agent_card", "A2ATaskHandler"]
+__all__ = ["load_agent_card", "build_agent_card", "A2ATaskHandler"]

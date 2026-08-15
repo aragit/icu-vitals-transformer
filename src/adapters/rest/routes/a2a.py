@@ -17,7 +17,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
-from src.adapters.a2a.discovery import load_agent_card
+from src.adapters.a2a.discovery import build_agent_card
 from src.adapters.a2a.task_handler import A2ATaskHandler
 from src.config import settings
 from src.core.services.clinical_assessment import ClinicalAssessmentService
@@ -35,7 +35,7 @@ def _require_a2a_enabled() -> None:
 async def agent_card() -> dict[str, Any]:
     """Return the A2A agent card for capability negotiation."""
     _require_a2a_enabled()
-    return load_agent_card()
+    return build_agent_card()
 
 
 @router.post("/a2a/tasks")

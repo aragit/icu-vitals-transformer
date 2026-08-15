@@ -19,6 +19,7 @@ _TOOL_DESCRIPTIONS = {
     "get_forecast": "SafetyShell-bounded trend forecast for an episode.",
     "get_deterioration_index": "DDS assessment + severity tier for an episode.",
     "discover_episode": "Discover the active episode for a patient (MRTR on ambiguity).",
+    "discover_capabilities": "Return the server capability matrix (tools, resources, bounds).",
 }
 
 
@@ -109,4 +110,6 @@ def _schema_for(tool_name: str) -> dict[str, Any]:
             "properties": {"patient_id": {"type": "string"}},
             "required": ["patient_id"],
         }
+    if tool_name == "discover_capabilities":
+        return {"type": "object", "properties": {}, "required": []}
     return {"type": "object"}

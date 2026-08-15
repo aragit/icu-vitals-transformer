@@ -24,6 +24,7 @@ from typing import Any
 
 from src.core.domain.episode import Episode, EpisodeState
 from src.core.domain.vitals import VitalSignsWindow
+from src.observability.metrics import set_episode_state_gauges
 from src.ports.repository import (
     AssessmentRepository,
     EpisodeRepository,
@@ -84,6 +85,9 @@ class RedisEpisodeRepository(EpisodeRepository):
     def _active_key(self, patient_id: str) -> str:
         return f"index:episode:active:{patient_id}"
 
+    def _state_counts_key(self) -> str:
+        return "episodes:state_counts"
+
     async def create(self, patient_id: str) -> Episode:
         episode = Episode(episode_id=f"E-{patient_id}", patient_id=patient_id)
         await self._upsert(episode)
@@ -127,12 +131,29 @@ class RedisEpisodeRepository(EpisodeRepository):
             if raw
             else Episode(episode_id=episode_id, patient_id="unknown")
         )
+        old_state = episode.state
         episode.state = state
-        episode.available_vitals = set(assessment.contributing_factors)
         episode.updated_at = episode.updated_at.now()
         await self._upsert(episode)
         if state in (EpisodeState.EMERGENCY,):
             await self._redis.srem(self._active_key(episode.patient_id), episode.episode_id)
+
+        pipe = self._redis.pipeline()
+        pipe.hincrby(self._state_counts_key(), state.value, 1)
+        if old_state.value != state.value:
+            pipe.hincrby(self._state_counts_key(), old_state.value, -1)
+        await pipe.execute()
+
+        raw_counts: dict[str, Any] = await self._redis.hgetall(self._state_counts_key())
+        state_counts: dict[str, int] = {}
+        for k, v in raw_counts.items():
+            key = k.decode() if isinstance(k, bytes) else k
+            try:
+                state_counts[key] = int(v)
+            except (ValueError, TypeError):
+                continue
+        set_episode_state_gauges(state_counts)
+
         return episode
 
     async def update_window(self, episode_id: str, window: VitalSignsWindow) -> Episode:
@@ -140,6 +161,15 @@ class RedisEpisodeRepository(EpisodeRepository):
         if not raw:
             raise KeyError(f"Unknown episode: {episode_id}")
         episode = self._from_hash(raw)
+        available = {
+            f for f in (
+                "heart_rate", "systolic_bp", "diastolic_bp", "spo2",
+                "respiratory_rate", "temperature",
+            ) if getattr(window, f) is not None
+        }
+        if window.avpu is not None:
+            available.add("avpu")
+        episode.available_vitals = available
         episode.updated_at = episode.updated_at.now()
         await self._upsert(episode)
         return episode

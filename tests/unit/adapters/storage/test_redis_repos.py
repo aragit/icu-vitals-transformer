@@ -23,8 +23,11 @@ from src.adapters.storage.redis import (
 from src.core.domain.episode import Episode, EpisodeState
 from src.core.domain.forecast import DeteriorationAssessment
 from src.core.domain.vitals import VitalSignsWindow
+from src.observability.metrics import EPISODE_STATE_GAUGE, set_episode_state_gauges
 
 pytestmark = pytest.mark.unit
+
+ALL_STATES = ("NORMAL", "WARNING", "ALERT", "EMERGENCY", "CRITICAL")
 
 
 def _window(hr: float | None = 72.0) -> VitalSignsWindow:
@@ -55,6 +58,7 @@ def _mock_redis(**overrides: Any) -> AsyncMock:
         zadd=MagicMock(),
         expire=MagicMock(),
         hset=MagicMock(),
+        hincrby=MagicMock(),
         sadd=MagicMock(),
         srem=MagicMock(),
         execute=AsyncMock(return_value=[None, None]),
@@ -132,7 +136,10 @@ class TestRedisEpisodeRepository:
 
     async def test_transition_emergency_clears_active_index(self) -> None:
         redis = _mock_redis(
-            hgetall=AsyncMock(return_value=_hash_from_episode("E-PT-001", "PT-001")),
+            hgetall=AsyncMock(side_effect=[
+                _hash_from_episode("E-PT-001", "PT-001"),
+                {},
+            ]),
         )
         repo = RedisEpisodeRepository(client=redis)
         assessment = DeteriorationAssessment(
@@ -143,12 +150,19 @@ class TestRedisEpisodeRepository:
         )
         ep = await repo.transition("E-PT-001", "deterioration_assessment", assessment)
         assert ep.state is EpisodeState.EMERGENCY
-        assert ep.available_vitals == {"heart_rate_elevated"}
+        # Phase 1 fix: transition() must NOT derive available_vitals from
+        # contributing_factors (those are scoring artifacts like
+        # "heart_rate_elevated", not vital-type names). available_vitals is now
+        # owned by update_window(); transition leaves it untouched.
+        assert ep.available_vitals == set()
         redis.srem.assert_awaited_once()
 
     async def test_transition_non_emergency_keeps_index(self) -> None:
         redis = _mock_redis(
-            hgetall=AsyncMock(return_value=_hash_from_episode("E-PT-001", "PT-001")),
+            hgetall=AsyncMock(side_effect=[
+                _hash_from_episode("E-PT-001", "PT-001"),
+                {},
+            ]),
         )
         repo = RedisEpisodeRepository(client=redis)
         assessment = DeteriorationAssessment(
@@ -163,7 +177,10 @@ class TestRedisEpisodeRepository:
 
     async def test_transition_with_unknown_severity_falls_back_normal(self) -> None:
         redis = _mock_redis(
-            hgetall=AsyncMock(return_value=_hash_from_episode("E-PT-001", "PT-001")),
+            hgetall=AsyncMock(side_effect=[
+                _hash_from_episode("E-PT-001", "PT-001"),
+                {},
+            ]),
         )
         repo = RedisEpisodeRepository(client=redis)
         # Use a plain attribute carrier so we can inject an invalid severity
@@ -176,7 +193,7 @@ class TestRedisEpisodeRepository:
         assert ep.state is EpisodeState.NORMAL
 
     async def test_transition_creates_fresh_when_no_hash(self) -> None:
-        redis = _mock_redis(hgetall=AsyncMock(return_value={}))
+        redis = _mock_redis(hgetall=AsyncMock(side_effect=[{}, {}]))
         repo = RedisEpisodeRepository(client=redis)
         assessment = DeteriorationAssessment(
             patient_id="PT-001",
@@ -208,6 +225,26 @@ class TestRedisEpisodeRepository:
             {"episode_id": "E-X", "patient_id": "PT-001"}
         )
         assert ep.state is EpisodeState.NORMAL
+
+    async def test_transition_updates_episode_state_gauge(self) -> None:
+        """Phase A.1: transition() updates EPISODE_STATE_GAUGE via Redis counts hash."""
+        set_episode_state_gauges({s: 0 for s in ALL_STATES})
+        redis = _mock_redis(
+            hgetall=AsyncMock(side_effect=[
+                _hash_from_episode("E-PT-001", "PT-001"),
+                {"NORMAL": "0", "WARNING": "0", "ALERT": "1", "EMERGENCY": "0", "CRITICAL": "0"},
+            ]),
+        )
+        repo = RedisEpisodeRepository(client=redis)
+        assessment = DeteriorationAssessment(
+            patient_id="PT-001",
+            ensemble_score=18.0,
+            severity="EMERGENCY",
+            contributing_factors=["heart_rate_critical"],
+        )
+        await repo.transition("E-PT-001", "deterioration_assessment", assessment)
+        assert EPISODE_STATE_GAUGE.labels(state="EMERGENCY")._value.get() == 0
+        assert EPISODE_STATE_GAUGE.labels(state="ALERT")._value.get() == 1
 
 
 class TestRedisAssessmentRepository:

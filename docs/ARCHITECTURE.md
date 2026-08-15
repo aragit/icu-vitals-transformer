@@ -85,9 +85,10 @@ input: window + trend_per_hour
    raise stale_data_warning (>300s)
 ```
 
-The shell is constructed in `src/dependencies.py` with an optional
-`on_fallback` hook that increments the `safety_shell_fallback_total` counter —
-core stays framework-free; the Prometheus hook is wired at the adapter boundary.
+The shell is constructed in `src/dependencies.py` with optional
+`on_fallback` and `on_stale_data` hooks that increment the `safety_shell_fallback_total`
+and `stale_data_warning_total` counters — core stays framework-free; the Prometheus
+hooks are wired at the adapter boundary.
 
 ## 4.5 Observability Contract
 
@@ -100,3 +101,10 @@ core stays framework-free; the Prometheus hook is wired at the adapter boundary.
   the CIMD `requested_by` principal for audit.
 - `X-Request-ID` is echoed on every response; legacy `/vitals/*` routes carry
   `Deprecation: true` + a `Link` migration hint to v2.
+
+## 4.6 Episode ID Format
+
+Episode IDs use the deterministic format `E-{patient_id}` (see `docs/ADR-001-episode-id-format.md`).
+This format is locked in v0.2.0 and relied upon by e2e tests and the baseline
+contract. Migration to UUIDs is deferred until multi-episode-per-patient readmission
+tracking is required (R2.1+).

@@ -29,7 +29,7 @@ from src.adapters.storage.redis import (
 )
 from src.core.safety.shell import SafetyShell
 from src.core.services.clinical_assessment import ClinicalAssessmentService
-from src.observability.metrics import SAFETY_SHELL_FALLBACK_TOTAL
+from src.observability.metrics import SAFETY_SHELL_FALLBACK_TOTAL, STALE_DATA_WARNING_TOTAL
 from src.ports.forecaster import ForecastBackend
 from src.ports.repository import (
     AssessmentRepository,
@@ -94,6 +94,7 @@ def get_clinical_service() -> ClinicalAssessmentService:
         backend: ForecastBackend = SafetyShell(
             get_forecast_backend(),
             on_fallback=SAFETY_SHELL_FALLBACK_TOTAL.inc,
+            on_stale_data=STALE_DATA_WARNING_TOTAL.inc,
         )
         _clinical_service = ClinicalAssessmentService(
             vitals_repo=get_vitals_repo(),

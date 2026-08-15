@@ -34,14 +34,15 @@ payload prompting disambiguation — it never guesses silently.
 
 | Tier | DDS range | Meaning |
 | --- | --- | --- |
-| `NORMAL` | 0–5 | No immediate physiological concern. |
-| `WARNING` | 6–10 | Mild-moderate derangement; trend monitoring warranted. |
-| `ALERT` | 11–14 | Significant physiology drift; escalate review. |
-| `EMERGENCY` | 15–20 | Critical thresholds exceeded; treat as urgent. |
-| `CRITICAL` | > 20 | Life-threatening; activate response pathway. |
+| `NORMAL` | 0–2 | No immediate physiological concern. |
+| `WARNING` | 3–4 | Mild derangement; trend monitoring warranted. |
+| `ALERT` | 5–6 | Significant physiology drift; escalate review. |
+| `EMERGENCY` | ≥7 | Critical thresholds exceeded; treat as urgent. |
 
 > Note: DDS loosely follows NEWS2 cut points but is **not** the standard NEWS2
-> scale; some thresholds and AVPU weighting differ.
+> scale; some thresholds and AVPU weighting differ. `CRITICAL` is an episode
+> lifecycle state (`EpisodeState.CRITICAL`), not a DDS severity tier — there is
+> no DDS score range that maps to `CRITICAL`.
 
 ## Resource Discovery
 

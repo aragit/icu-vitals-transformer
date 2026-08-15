@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
+from src.adapters.mcp.discovery import discover_capabilities as _discover_capabilities
 from src.adapters.mcp.mrtr import resolve_single_episode
 from src.adapters.rest.metadata import build_meta, freshness_seconds
 from src.core.services.clinical_assessment import ClinicalAssessmentService
@@ -103,5 +104,15 @@ def register_tools(server: FastMCP) -> None:
             "patient_id": patient_id,
             "episode_id": episode.episode_id if episode is not None else None,
             "state": episode.state.value if episode is not None else None,
+            "_meta": build_meta(0),
+        }
+
+    @server.tool()
+    async def discover_capabilities() -> dict[str, Any]:
+        """Return the server capability matrix (tools, resources, safety bounds)."""
+        MCP_TOOL_CALLS.inc()
+        caps = _discover_capabilities()
+        return {
+            **caps,
             "_meta": build_meta(0),
         }

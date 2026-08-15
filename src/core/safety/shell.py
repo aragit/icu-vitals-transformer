@@ -52,9 +52,11 @@ class SafetyShell(ForecastBackend):
         self,
         inner: ForecastBackend,
         on_fallback: Callable[..., None] | None = None,
+        on_stale_data: Callable[..., None] | None = None,
     ) -> None:
         self._inner = inner
         self._on_fallback = on_fallback
+        self._on_stale_data = on_stale_data
 
     async def forecast(
         self,
@@ -80,32 +82,49 @@ class SafetyShell(ForecastBackend):
         result: ForecastResult,
         window: VitalSignsWindow,
     ) -> ForecastResult:
-        # Clamp every projected window to physiological bounds.
-        result.forecasted_vitals = _clamp_window(result.forecasted_vitals)
-        result.uncertainty_lower = _clamp_window(result.uncertainty_lower)
-        result.uncertainty_upper = _clamp_window(result.uncertainty_upper)
+        """Sanitize a forecast result **without mutating the caller's object**.
 
-        # Enforce lower <= forecasted <= upper per channel.
+        Returns a deep-copied ``ForecastResult`` with projected vitals clamped
+        to physiological bounds, lower/upper ordering enforced, and stale-data
+        warnings attached. The input ``result`` is left untouched so upstream
+        callers (e.g. the ensemble) can still read the raw, unclamped projection.
+        """
+        forecasted = _clamp_window(result.forecasted_vitals)
+        lower = _clamp_window(result.uncertainty_lower)
+        upper = _clamp_window(result.uncertainty_upper)
+
+        # Enforce lower <= forecasted <= upper per channel on the copies.
         for field in NUMERIC_FIELDS:
-            forecasted = getattr(result.forecasted_vitals, field)
-            lower = getattr(result.uncertainty_lower, field)
-            upper = getattr(result.uncertainty_upper, field)
-            if forecasted is None:
+            forecasted_val = getattr(forecasted, field)
+            lower_val = getattr(lower, field)
+            upper_val = getattr(upper, field)
+            if forecasted_val is None:
                 continue
-            if lower is not None and lower > forecasted:
-                setattr(result.uncertainty_lower, field, forecasted)
-            if upper is not None and upper < forecasted:
-                setattr(result.uncertainty_upper, field, forecasted)
+            if lower_val is not None and lower_val > forecasted_val:
+                lower = lower.model_copy(update={field: forecasted_val})
+            if upper_val is not None and upper_val < forecasted_val:
+                upper = upper.model_copy(update={field: forecasted_val})
 
-        # Stale-data guard.
-        if result.data_freshness_seconds > STALE_DATA_THRESHOLD_SECONDS:
-            result.stale_data_warning = True
-            if "stale_data_warning" not in result.contributing_factors:
-                result.contributing_factors.append("stale_data_warning")
+        # Stale-data guard; derived from freshness, attached to a copy of factors.
+        stale = result.data_freshness_seconds > STALE_DATA_THRESHOLD_SECONDS
+        contributing_factors = list(result.contributing_factors)
+        if stale and "stale_data_warning" not in contributing_factors:
+            contributing_factors.append("stale_data_warning")
+            if self._on_stale_data is not None:
+                self._on_stale_data()
 
         logger.debug(
             "SafetyShell validated forecast for %s (freshness=%ss)",
             result.patient_id,
             result.data_freshness_seconds,
         )
-        return result
+        return result.model_copy(
+            update={
+                "forecasted_vitals": forecasted,
+                "uncertainty_lower": lower,
+                "uncertainty_upper": upper,
+                "stale_data_warning": stale,
+                "contributing_factors": contributing_factors,
+            },
+            deep=True,
+        )

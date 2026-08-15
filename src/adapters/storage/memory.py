@@ -21,6 +21,7 @@ from collections import deque
 from src.core.domain.episode import Episode, EpisodeState
 from src.core.domain.forecast import DeteriorationAssessment
 from src.core.domain.vitals import VitalSignsWindow
+from src.observability.metrics import set_episode_state_gauges
 from src.ports.repository import (
     AssessmentRepository,
     EpisodeRepository,
@@ -123,7 +124,6 @@ class InMemoryEpisodeRepository(EpisodeRepository):
             if state.value not in {e.value for e in EpisodeState}:
                 state = EpisodeState.NORMAL
             episode.state = state
-            episode.available_vitals = set(assessment.contributing_factors)
             episode.updated_at = episode.updated_at.now()
             self._episodes[episode_id] = episode
 
@@ -131,6 +131,11 @@ class InMemoryEpisodeRepository(EpisodeRepository):
             # "active" for new auto-creation lookups of the same patient.
             if state in (EpisodeState.EMERGENCY,):
                 self._active_by_patient.pop(episode.patient_id, None)
+
+            state_counts: dict[str, int] = {}
+            for ep in self._episodes.values():
+                state_counts[ep.state.value] = state_counts.get(ep.state.value, 0) + 1
+            set_episode_state_gauges(state_counts)
 
             return episode
 
@@ -142,6 +147,18 @@ class InMemoryEpisodeRepository(EpisodeRepository):
                 # before an explicit episode; record lazily.
                 raise KeyError(f"Unknown episode: {episode_id}")
             self._windows[episode_id] = window
+            # derive observed vital channels from the window itself — never
+            # from assessment contributing_factors (scoring artifacts such as
+            # "heart_rate_critical" are not vital-type names).
+            available = {
+                f for f in (
+                    "heart_rate", "systolic_bp", "diastolic_bp", "spo2",
+                    "respiratory_rate", "temperature",
+                ) if getattr(window, f) is not None
+            }
+            if window.avpu is not None:
+                available.add("avpu")
+            episode.available_vitals = available
             episode.updated_at = episode.updated_at.now()
             return episode
 

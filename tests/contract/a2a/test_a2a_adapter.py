@@ -81,7 +81,7 @@ async def test_agent_card_served_when_enabled():
     assert response.status_code == 200
     card = response.json()
     assert card["name"] == "icu-vitals-transformer"
-    assert card["version"] == "0.9.0"
+    assert card["version"] == "0.9.1"
     assert card["schema"] == "a2a-agent-card/v1"
     assert "skills" in card and "operationalGuardrails" in card
     assert card["operationalGuardrails"]["auth"]["scheme"] == "CIMD-JWT"
@@ -167,3 +167,54 @@ async def test_unsupported_action_returns_400():
         response = await client.post("/a2a/tasks", json=task)
     assert response.status_code == 400
     assert "launch_missiles" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_agent_card_generated_dynamically_from_settings():
+    """Phase C.1: agent card URL reflects runtime host/port settings."""
+    settings.a2a_enabled = True
+    original_host = settings.host
+    original_port = settings.port
+    settings.host = "0.0.0.0"
+    settings.port = 9000
+    try:
+        async with _client() as client:
+            response = await client.get("/.well-known/agent.json")
+        assert response.status_code == 200
+        card = response.json()
+        assert card["url"] == "http://0.0.0.0:9000"
+        assert card["protocols"]["rest"]["base_url"] == "http://0.0.0.0:9000"
+        assert (
+            card["protocols"]["mcp"]["endpoints"]["streamable_http"]
+            == "http://0.0.0.0:9000/mcp"
+        )
+    finally:
+        settings.host = original_host
+        settings.port = original_port
+
+
+def test_build_agent_card_uses_settings():
+    """Phase C.1: build_agent_card() derives URL from settings, not static file."""
+    from src.adapters.a2a.discovery import build_agent_card
+
+    original_host = settings.host
+    original_port = settings.port
+    settings.host = "10.0.0.50"
+    settings.port = 443
+    try:
+        card = build_agent_card()
+    finally:
+        settings.host = original_host
+        settings.port = original_port
+    assert card["url"] == "http://10.0.0.50:443"
+    assert card["schema"] == "a2a-agent-card/v1"
+    assert card["name"] == "icu-vitals-transformer"
+
+@pytest.mark.asyncio
+async def test_static_agent_card_template_preserved():
+    """Phase C.1: manifests/AGENT_CARD.json is preserved as a static template."""
+    from src.adapters.a2a.discovery import load_agent_card
+
+    card = load_agent_card()
+    assert card["url"] == "http://localhost:8000"
+    assert card["schema"] == "a2a-agent-card/v1"

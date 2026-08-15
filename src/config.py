@@ -1,6 +1,23 @@
 """Application configuration via Pydantic Settings."""
 
+from importlib.metadata import PackageNotFoundError, version as _pkg_version
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def _default_app_version() -> str:
+    """Application version sourced from installed package metadata.
+
+    Single source of truth = ``pyproject.toml`` ``version`` (read via
+    ``importlib.metadata``). When the package is not installed (e.g. running
+    directly from a source checkout on the test path), fall back to the
+    canonical release version so ``GET /discover`` and ``GET /health`` always
+    report a concrete string instead of failing at import time.
+    """
+    try:
+        return _pkg_version("icu-vitals-transformer")
+    except PackageNotFoundError:
+        return "0.9.1"
 
 
 class Settings(BaseSettings):
@@ -14,7 +31,7 @@ class Settings(BaseSettings):
 
     # App
     app_name: str = "icu-vitals-transformer"
-    app_version: str = "0.9.0"
+    app_version: str = _default_app_version()
     debug: bool = False
 
     # Server

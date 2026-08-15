@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -105,3 +106,79 @@ class TestAssessEpisode:
         transitioned = await svc._episodes.get(episode.episode_id)
         assert transitioned is not None
         assert transitioned.state == EpisodeState.WARNING
+
+
+class TestDiscoverChannels:
+    """Task 2.1 acceptance #3: discover_channels() reflects the observed window,
+    including AVPU sourced from a valueCodeableConcept observation."""
+
+    def _obs(self, loinc: str, qty=None, codeable=None) -> dict:
+        obj = {
+            "resourceType": "Observation",
+            "subject": {"reference": "Patient/PT-001"},
+            "code": {"coding": [{"system": "http://loinc.org", "code": loinc}]},
+            "effectiveDateTime": "2026-07-02T08:05:00Z",
+        }
+        if qty is not None:
+            obj["valueQuantity"] = {"value": qty[0], "unit": qty[1]}
+        if codeable is not None:
+            obj["valueCodeableConcept"] = {"coding": [codeable]}
+        return obj
+
+    async def test_discover_channels_mixed_obs(self) -> None:
+        svc = _service()
+        observations = [
+            self._obs("8867-4", qty=(72.0, "bpm")),
+            # SNOMED 450847001 = Responds to pain -> "P"
+            self._obs("8867-4", codeable={"system": "http://snomed.info/sct", "code": "450847001"}),
+            self._obs("2708-6", qty=(98.0, "%")),
+        ]
+        await svc.ingest_and_window("PT-001", observations)
+        episode = await svc._episodes.get_active_by_patient("PT-001")
+        assert episode is not None
+        channels = await svc.discover_channels(episode.episode_id)
+        assert "heart_rate" in channels
+        assert "spo2" in channels
+        assert "avpu" in channels
+        assert "systolic_bp" not in channels
+
+
+class TestMetricsInstrumentation:
+    """Phase A.2: INGEST_DURATION and FORECAST_DURATION histograms are observed."""
+
+    def _hr_obs(self, patient_id: str = "PT-001", hr: float = 72.0) -> dict:
+        return {
+            "resourceType": "Observation",
+            "subject": {"reference": f"Patient/{patient_id}"},
+            "code": {"coding": [{"system": "http://loinc.org", "code": "8867-4"}]},
+            "valueQuantity": {"value": hr, "unit": "bpm"},
+            "effectiveDateTime": "2026-07-02T08:05:00",
+        }
+
+    def _mock_hist(self) -> MagicMock:
+        mock_hist = MagicMock()
+        mock_cm = MagicMock()
+        mock_hist.time.return_value = mock_cm
+        return mock_hist
+
+    async def test_ingest_instruments_ingest_duration(self) -> None:
+        svc = _service()
+        mock_hist = self._mock_hist()
+        with patch(
+            "src.core.services.clinical_assessment.INGEST_DURATION", mock_hist
+        ):
+            await svc.ingest_and_window("PT-001", [self._hr_obs()])
+        mock_hist.time.assert_called_once()
+
+    async def test_forecast_instruments_forecast_duration(self) -> None:
+        svc = _service()
+        await svc.ingest_and_window("PT-001", [self._hr_obs()])
+        episode = await svc._episodes.get_active_by_patient("PT-001")
+        assert episode is not None
+
+        mock_hist = self._mock_hist()
+        with patch(
+            "src.core.services.clinical_assessment.FORECAST_DURATION", mock_hist
+        ):
+            await svc.forecast_episode(episode.episode_id, 60)
+        mock_hist.time.assert_called_once()

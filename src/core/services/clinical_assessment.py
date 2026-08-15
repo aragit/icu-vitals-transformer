@@ -24,6 +24,7 @@ from src.core.governance.deterioration import compute_dds
 from src.core.governance.severity import severity_from_score
 from src.core.ingestion.fhir_parser import parse_batch
 from src.core.windowing.engine import window_vitals
+from src.observability.metrics import FORECAST_DURATION, INGEST_DURATION
 from src.ports.forecaster import ForecastBackend
 from src.ports.repository import (
     AssessmentRepository,
@@ -60,20 +61,21 @@ class ClinicalAssessmentService:
         exists, so callers can stream observations without pre-provisioned
         episode state.
         """
-        parsed = parse_batch(observations)
-        if not parsed:
-            raise ValueError("No valid observations parsed")
+        with INGEST_DURATION.time():
+            parsed = parse_batch(observations)
+            if not parsed:
+                raise ValueError("No valid observations parsed")
 
-        window = window_vitals(parsed, patient_id, anchor="recent")
-        if window is None:
-            raise ValueError(f"Could not window vitals for {patient_id}")
+            window = window_vitals(parsed, patient_id, anchor="recent")
+            if window is None:
+                raise ValueError(f"Could not window vitals for {patient_id}")
 
-        await self._vitals.append(patient_id, window)
-        episode = await self._episodes.get_active_by_patient(patient_id)
-        if episode is None:
-            episode = await self._episodes.create(patient_id)
-        await self._episodes.update_window(episode.episode_id, window)
-        return window
+            await self._vitals.append(patient_id, window)
+            episode = await self._episodes.get_active_by_patient(patient_id)
+            if episode is None:
+                episode = await self._episodes.create(patient_id)
+            await self._episodes.update_window(episode.episode_id, window)
+            return window
 
     async def open_episode(self, patient_id: str) -> Episode:
         """Explicitly open a new clinical monitoring episode for a patient."""
@@ -136,7 +138,8 @@ class ClinicalAssessmentService:
         history = await self._vitals.get_history(episode.patient_id)
         trend_per_hour = self._compute_trends(history)
 
-        return await self._backend.forecast(window, horizon_minutes, trend_per_hour)
+        with FORECAST_DURATION.time():
+            return await self._backend.forecast(window, horizon_minutes, trend_per_hour)
 
     async def discover_channels(self, episode_id: str) -> list[str]:
         """List the vital channels currently present in an episode's window."""

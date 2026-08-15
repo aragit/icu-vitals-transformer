@@ -13,8 +13,14 @@ from src.adapters.storage.memory import (
 )
 from src.core.domain.forecast import DeteriorationAssessment
 from src.core.domain.vitals import VitalSignsWindow
+from src.observability.metrics import (
+    EPISODE_STATE_GAUGE,
+    set_episode_state_gauges,
+)
 
 pytestmark = pytest.mark.unit
+
+ALL_STATES = ("NORMAL", "WARNING", "ALERT", "EMERGENCY", "CRITICAL")
 
 
 def _window(pid: str = "PT-001", hr: float | None = 72.0) -> VitalSignsWindow:
@@ -95,6 +101,22 @@ class TestEpisodeRepository:
         repo = InMemoryEpisodeRepository()
         ep = await repo.create("PT-001")
         await repo.update_window(ep.episode_id, _window("PT-001", hr=90.0))
+
+    async def test_transition_updates_episode_state_gauge(self) -> None:
+        """Phase A.1: transition() updates EPISODE_STATE_GAUGE after state change."""
+        set_episode_state_gauges({s: 0 for s in ALL_STATES})
+        repo = InMemoryEpisodeRepository()
+        ep = await repo.create("PT-001")
+        assessment = DeteriorationAssessment(
+            patient_id="PT-001",
+            ensemble_score=5.0,
+            severity="ALERT",
+            contributing_factors=["heart_rate_elevated"],
+        )
+        await repo.transition(ep.episode_id, "deterioration_assessment", assessment)
+        assert EPISODE_STATE_GAUGE.labels(state="ALERT")._value.get() == 1
+        assert EPISODE_STATE_GAUGE.labels(state="NORMAL")._value.get() == 0
+        assert EPISODE_STATE_GAUGE.labels(state="WARNING")._value.get() == 0
 
 
 class TestAssessmentRepository:

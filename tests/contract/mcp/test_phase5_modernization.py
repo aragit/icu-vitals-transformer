@@ -103,6 +103,7 @@ def test_discover_capabilities_contract():
         "get_forecast",
         "get_deterioration_index",
         "discover_episode",
+        "discover_capabilities",
     ]
     assert caps["safety_bounds"]["heart_rate"] == [0.0, 300.0]
     assert caps["loinc_mapping"]["8867-4"] == "heart_rate"
@@ -118,6 +119,7 @@ async def test_get_discover_endpoint(httpx_client):
         "get_forecast",
         "get_deterioration_index",
         "discover_episode",
+        "discover_capabilities",
     }
     assert "clinical://bounds/v1" in [r["uri"] for r in body["resources"]]
     assert body["_meta"]["clinical_disclaimer"]
@@ -155,6 +157,7 @@ def test_create_mcp_server_registers_tools():
         "get_forecast",
         "get_deterioration_index",
         "discover_episode",
+        "discover_capabilities",
     ]
 
 

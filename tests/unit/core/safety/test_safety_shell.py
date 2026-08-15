@@ -10,6 +10,7 @@ Validates the baseline contract (docs/BASELINE.md):
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -139,3 +140,68 @@ class TestFailClosed:
         assert result.forecasted_vitals.heart_rate == window.heart_rate
         assert result.forecasted_vitals.systolic_bp == window.systolic_bp
         assert result.patient_id == window.patient_id
+
+
+class TestInputImmutability:
+    """Tasks 2.3 + 4.1: validate() must not mutate the caller's ForecastResult,
+    and the core domain model must accept out-of-bound projections (no Field
+    bounds) so SafetyShell can clamp them instead of raising ValidationError."""
+
+    def test_validate_does_not_mutate_input(self) -> None:
+        forecasted = _window(heart_rate=350.0)
+        # 4.1: out-of-bound projection constructs without error.
+        assert forecasted.heart_rate == 350.0
+        lower = _window(heart_rate=350.0)
+        upper = _window(heart_rate=350.0)
+        result = _result(forecasted, lower, upper)
+
+        shell = SafetyShell(_NoopBackend(result))
+        out = shell.validate(result, forecasted)
+
+        # Input ForecastResult is left untouched.
+        assert result.forecasted_vitals.heart_rate == 350.0
+        assert result.uncertainty_lower.heart_rate == 350.0
+        assert result.uncertainty_upper.heart_rate == 350.0
+        assert "stale_data_warning" not in result.contributing_factors
+        # Output is clamped to the physiological cap (heart_rate upper = 300).
+        assert out.forecasted_vitals.heart_rate == 300.0
+
+    def test_validate_clamps_and_reanchors_bounds(self) -> None:
+        # upper below forecasted on heart_rate -> raised to forecasted on output;
+        # input upper unchanged.
+        forecasted = _window(heart_rate=120.0)
+        upper = _window(heart_rate=10.0)
+        lower = _window()
+        result = _result(forecasted, lower, upper)
+        shell = SafetyShell(_NoopBackend(result))
+        out = shell.validate(result, forecasted)
+        assert out.uncertainty_upper.heart_rate == 120.0
+        assert result.uncertainty_upper.heart_rate == 10.0  # input unchanged
+
+
+class TestStaleDataCallback:
+    """Phase A.3: on_stale_data callback fires on stale results, not fresh."""
+
+    def test_stale_result_invokes_callback_once(self) -> None:
+        base = _window()
+        result = _result(base, base, base, freshness=STALE_DATA_THRESHOLD_SECONDS + 1)
+        callback = MagicMock()
+        shell = SafetyShell(_NoopBackend(result), on_stale_data=callback)
+        shell.validate(result, base)
+        callback.assert_called_once()
+
+    def test_fresh_result_does_not_invoke_callback(self) -> None:
+        base = _window()
+        result = _result(base, base, base, freshness=60, stale=False)
+        callback = MagicMock()
+        shell = SafetyShell(_NoopBackend(result), on_stale_data=callback)
+        shell.validate(result, base)
+        callback.assert_not_called()
+
+    def test_callback_not_inherited_from_outer_scope(self) -> None:
+        """No on_stale_data callback => stale flag still set, no crash."""
+        base = _window()
+        result = _result(base, base, base, freshness=STALE_DATA_THRESHOLD_SECONDS + 1)
+        shell = SafetyShell(_NoopBackend(result))
+        out = shell.validate(result, base)
+        assert out.stale_data_warning is True

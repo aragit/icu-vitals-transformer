@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import Any
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +42,24 @@ UNIT_VALIDATORS: dict[str, frozenset[str]] = {
 }
 VALID_AVPU_TOKENS: frozenset[str] = frozenset({"A", "V", "P", "U"})
 
+# FHIR R4 codes consciousness (AVPU) as a valueCodeableConcept instead of a
+# numeric quantity. SNOMED CT codes and common display strings are mapped to
+# the canonical single-character AVPU token so they surface through the same
+# windowing → DDS path as any other vital. (Phase 0 had no consciousness LOINC
+# in the map — see docs/BASELINE.md §6 limitation #6 — so AVPU was unreachable;
+# this mapping closes that gap for observations whose value is a codeable
+# concept rather than a quantity.)
+AVPU_CODE_MAPPING: dict[str, str] = {
+    "248234008": "A",  # SNOMED CT: Alert
+    "300202002": "V",  # SNOMED CT: Responds to voice
+    "450847001": "P",  # SNOMED CT: Responds to pain
+    "422768004": "U",  # SNOMED CT: Unresponsive
+    "Alert": "A",
+    "Voice": "V",
+    "Pain": "P",
+    "Unresponsive": "U",
+}
+
 
 def parse_observation(obs: dict[str, Any]) -> dict[str, Any]:
     """Parse a single FHIR R4 Observation into an internal record.
@@ -71,10 +89,25 @@ def parse_observation(obs: dict[str, Any]) -> dict[str, Any]:
 
     vital_type = LOINC_CODES[loinc]
     value: Any = None
+    avpu: Optional[str] = None
     if "valueQuantity" in obs:
         value = obs["valueQuantity"].get("value")
     elif "valueString" in obs:
         value = obs["valueString"]
+    elif "valueCodeableConcept" in obs:
+        # FHIR R4 often codes consciousness (AVPU) as a codeable concept
+        # (SNOMED CT code or display text) rather than a quantity. Map the
+        # first recognized coding to the canonical single-char AVPU token and
+        # surface it both as ``value`` and as the windowed ``avpu`` field,
+        # closing the Phase 0 gap where AVPU was unreachable on ingestion.
+        for coding in obs["valueCodeableConcept"].get("coding", []):
+            code = str(coding.get("code", ""))
+            display = str(coding.get("display", ""))
+            token = AVPU_CODE_MAPPING.get(code) or AVPU_CODE_MAPPING.get(display)
+            if token is not None:
+                value = token
+                avpu = token
+                break
 
     unit = obs.get("valueQuantity", {}).get("unit")
     if unit is not None and vital_type in UNIT_VALIDATORS:
@@ -97,6 +130,7 @@ def parse_observation(obs: dict[str, Any]) -> dict[str, Any]:
         "value": value,
         "timestamp": effective,
         "unit": unit,
+        "avpu": avpu,
     }
 
 

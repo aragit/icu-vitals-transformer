@@ -330,3 +330,77 @@ Histograms: `forecast_latency_seconds`, `ingest_duration_seconds`,
 | Coverage ≥ 80% on `src/` | `pytest --cov=src --cov-fail-under=80`. |
 | `ruff` clean | `ruff check src/ tests/`. |
 | `mypy` clean | `mypy src/` (see mypy baseline-lock overrides in `pyproject.toml`). |
+
+---
+
+## 9. Phase Refinements (v0.9.0)
+
+Behavior changes introduced between the Phase 0 baseline and the v0.9.0
+release. Tests for each live under `tests/unit/` and `tests/integration/`.
+
+### 9.1 Consciousness (AVPU) through the ingest pipeline
+- `parse_observation` now resolves a FHIR R4 `valueCodeableConcept` against a
+  SNOMED CT code map (`248234008`→A Alert, `300202002`→V Voice, `450847002`→P
+  Pain, `422768004`→U Unresponsive) and falls back to `display` text. The
+  resolved letter is emitted on **both** `value` and `avpu`, so an AVPU
+  observation reuses any LOINC (e.g. `8867-4`) and flows through the same
+  window/trend path as numeric vitals.
+- `VitalSignsWindow.avpu` is therefore reachable via normal ingestion
+  (retires BASELINE §6 #6). `compute_deterioration_index` scores
+  `avpu != "A"` at 3 and the engine propagates it to the DDS forecast and
+  `altered_consciousness_{A|V|P|U}` factors.
+- `update_vitals` in `src/core/windowing/engine.py:100` captures the latest
+  `avpu` across the window (last non-empty wins) and aggregates numeric
+  channels via mean, so a window mixing a quantity and an AVPU observation on
+  the same LOINC keeps both signals.
+
+### 9.2 Unit validation at parse time
+- `parse_observation` validates `valueQuantity.unit` against an accepted set
+  per vital type (heart_rate: `bpm`/`beats/min`; blood_pressure: `mmHg`/`mm
+  Hg`; spo2: `%`/`percent`; respiratory_rate: `breaths/min`/`rpm`;
+  temperature: `°C`/`celsius`). Out-of-set units (e.g. `°F`, `kg`, `mm[Hg]`
+  without space) emit
+  `WARNING ... Non-standard unit ... dropping` and the observation is
+  excluded from the parse result (retires BASELINE §6 #4 for the
+  supported vitals). `valueCodeableConcept`/`valueString` observations carry
+  no `unit` and are never rejected.
+
+### 9.3 Domain bounds live in the model, not pydantic `Field` constraints
+- The physiological caps (heart_rate/systolic_bp ∈ [0,300], diastolic_bp ∈
+  [0,200], spo2 ∈ [0,100], respiratory_rate ∈ [0,60], temperature ∈ [30,45])
+  are now expressed as `CLINICAL_BOUNDS` constants in
+  `src/core/domain/vitals.py` and applied by `clamp()` at construction and
+  serialization — there are **no** `Field(ge=, le=)` validators on
+  `VitalSignsWindow`. A projection with an out-of-range value (e.g.
+  `heart_rate=350`) constructs successfully and is clamped downstream by the
+  SafetyShell, rather than raising `ValidationError` (retires BASELINE §6
+  #3's validator-as-bound interpretation).
+
+### 9.4 SafetyShell immutability + clamp
+- `SafetyShell.validate` is a pure function of `(ForecastResult, VitalSignsWindow)`:
+  it builds a **copy** and never mutates the caller's `ForecastResult`, its
+  nested `forecasted_vitals`/`uncertainty_lower`/`uncertainty_upper` windows,
+  or `contributing_factors`. The returned forecasted and bounds values are
+  clamped to `CLINICAL_BOUNDS`; `uncertainty_upper < forecasted` on a field is
+  re-anchored to the forecasted value (the upper bound must envelope the
+  point estimate).
+
+### 9.5 Episode `available_vitals`
+- `available_vitals` on an `Episode` is derived **only** from the observed
+  `VitalSignsWindow` (the seven numeric fields plus `avpu`) — it is never
+  overwritten from assessment `contributing_factors`, which include
+  scoring artifacts such as `heart_rate_critical`. `discover_channels`
+  returns this list and is safe to call after `transition`.
+
+### 9.6 DDS severity tiers
+- Tier boundaries (see `src/governance/severity.py`,
+  mirrored in `manifests/mcp.json` and `manifests/SKILL.md`):
+  `NORMAL` 0–2, `WARNING` 3–4, `ALERT` 5–6, `EMERGENCY` ≥7.
+  Risk tiers exposed by the baseline are `NORMAL/WARNING/ALERT/EMERGENCY`
+  (consistent with BASELINE §5.5).
+
+### 9.7 Version source
+- `app_version` is read dynamically from installed package metadata in
+  `src/config.py` (`importlib.metadata.version("icu_vitals_transformer")`),
+  defaulting to `0.0.0` when metadata is unavailable; both manifests
+  (`manifests/mcp.json`, `manifests/SKILL.md`) carry `0.9.0`.

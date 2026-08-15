@@ -86,3 +86,53 @@ class TestEndToEndAvpuWindowingToDds:
         score, factors = compute_dds(window)
         assert "altered_consciousness_P" in factors
         assert score == 3
+
+
+class TestSeverityTiers:
+    """Task 3.1: DDS severity tiers must match src/core/governance/severity.py
+    (NORMAL 0-2, WARNING 3-4, ALERT 5-6, EMERGENCY >=7) and the manifests."""
+
+    @pytest.mark.parametrize(
+        "score, expected",
+        [
+            (0, "NORMAL"),
+            (2, "NORMAL"),
+            (3, "WARNING"),
+            (4, "WARNING"),
+            (5, "ALERT"),
+            (6, "ALERT"),
+            (7, "EMERGENCY"),
+            (20, "EMERGENCY"),
+        ],
+    )
+    def test_tier_boundaries(self, score: int, expected: str) -> None:
+        from src.core.governance.severity import severity_from_score
+
+        assert severity_from_score(float(score)) == expected
+
+
+class TestEndToEndAvpuValueCodeableConcept:
+    """Task 1.3: AVPU coded as a FHIR R4 valueCodeableConcept (SNOMED CT) reaches
+    the DDS scoring path through the full parse -> window -> compute pipeline."""
+
+    def test_snomed_consciousness_flows_to_dds(self) -> None:
+        from src.core.ingestion.fhir_parser import parse_observation
+
+        # SNOMED CT 450847001 = Responds to Pain -> "P".
+        observation = {
+            "resourceType": "Observation",
+            "subject": {"reference": "Patient/PT-001"},
+            "code": {"coding": [{"system": "http://loinc.org", "code": "8867-4"}]},
+            "valueCodeableConcept": {
+                "coding": [{"system": "http://snomed.info/sct", "code": "450847001"}]
+            },
+            "effectiveDateTime": ISO0,
+        }
+        parsed = parse_observation(observation)
+        assert parsed["avpu"] == "P"
+        window = window_vitals([parsed], "PT-001")
+        assert window is not None
+        assert window.avpu == "P"
+        score, factors = compute_dds(window)
+        assert "altered_consciousness_P" in factors
+        assert score == 3

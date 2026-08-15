@@ -118,3 +118,51 @@ class TestParseBatchWithValidation:
         results = parse_batch(batch)
         assert len(results) == 1
         assert results[0]["vital_type"] == "heart_rate"
+
+
+class TestValueCodeableConcept:
+    """Task 1.3: FHIR R4 consciousness (AVPU) coded as a codeable concept."""
+
+    @staticmethod
+    def _codeable_obs(
+        loinc: str,
+        code: str = "248234008",
+        system: str = "http://snomed.info/sct",
+        display: str | None = None,
+    ) -> dict:
+        coding = [{"system": system, "code": code}]
+        if display is not None:
+            coding[-1]["display"] = display
+        return {
+            "resourceType": "Observation",
+            "subject": {"reference": "Patient/PT-001"},
+            "code": {"coding": [{"system": "http://loinc.org", "code": loinc, "display": "T"}]},
+            "valueCodeableConcept": {"coding": coding},
+            "effectiveDateTime": ISO,
+        }
+
+    def test_snomed_alert_maps_to_a(self) -> None:
+        # SNOMED CT 248234008 = Alert.
+        parsed = parse_observation(self._codeable_obs("8867-4", "248234008"))
+        assert parsed["value"] == "A"
+        assert parsed["avpu"] == "A"
+
+    def test_snomed_pain_maps_to_p(self) -> None:
+        parsed = parse_observation(self._codeable_obs("8867-4", "450847001"))
+        assert parsed["value"] == "P"
+        assert parsed["avpu"] == "P"
+
+    def test_display_text_unresponsive_maps_to_u(self) -> None:
+        parsed = parse_observation(
+            self._codeable_obs("8867-4", "not-a-code", display="Unresponsive")
+        )
+        assert parsed["value"] == "U"
+        assert parsed["avpu"] == "U"
+
+    def test_unrecognized_codeable_concept_still_emitted(self) -> None:
+        # No SNOMED/display mapping → value stays None (mirrors the
+        # valueQuantity-absent contract); avpu stays None.
+        parsed = parse_observation(self._codeable_obs("8867-4", "999999999"))
+        assert parsed["vital_type"] == "heart_rate"
+        assert parsed["value"] is None
+        assert parsed["avpu"] is None

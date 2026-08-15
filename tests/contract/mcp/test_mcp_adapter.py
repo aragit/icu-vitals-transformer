@@ -64,6 +64,7 @@ async def test_tool_registry_exposes_phase4_surface(mcp_server):
         "get_forecast",
         "get_deterioration_index",
         "discover_episode",
+        "discover_capabilities",
     }
     descriptions = {t.name: (t.description or "") for t in tools}
     assert descriptions["ingest_vitals"]
@@ -129,3 +130,23 @@ async def test_discover_episode_returns_meta(mcp_server):
     assert payload["episode_id"] == "E-PT-M4"
     _meta = payload["_meta"]
     assert _meta["clinical_disclaimer"]
+
+
+@pytest.mark.asyncio
+async def test_discover_capabilities_tool_exposed(mcp_server):
+    """Phase B.1: discover_capabilities is registered as an MCP tool."""
+    tools = await mcp_server.list_tools()
+    names = {t.name for t in tools}
+    assert "discover_capabilities" in names
+
+
+@pytest.mark.asyncio
+async def test_discover_capabilities_tool_returns_caps(mcp_server):
+    """Calling discover_capabilities returns the capability matrix with _meta."""
+    result = await mcp_server.call_tool("discover_capabilities", {})
+    payload = _text(result)
+    assert len(payload["tools"]) >= 4
+    assert "safety_bounds" in payload
+    assert "loinc_mapping" in payload
+    assert "_meta" in payload
+    assert payload["_meta"]["clinical_disclaimer"]

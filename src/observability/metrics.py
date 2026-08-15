@@ -41,6 +41,11 @@ SAFETY_SHELL_FALLBACK_TOTAL = Counter(
     "Total number of safety shell invariant fallbacks triggered",
 )
 
+STALE_DATA_WARNING_TOTAL = Counter(
+    "stale_data_warning_total",
+    "Total number of stale-data warnings surfaced by the safety shell",
+)
+
 # Phase 4 canonical names (aliased to the same metric objects).
 VITALS_INGESTED_TOTAL = VITALS_INGESTED
 FORECASTS_GENERATED_TOTAL = FORECASTS_GENERATED
@@ -95,9 +100,13 @@ __all__ = [
     "ASSESSMENTS_TOTAL",
     "MCP_TOOL_CALLS",
     "SAFETY_SHELL_FALLBACK_TOTAL",
+    "STALE_DATA_WARNING_TOTAL",
     "VITALS_INGESTED_TOTAL",
     "FORECASTS_GENERATED_TOTAL",
     "EPISODE_STATE_GAUGE",
     "set_episode_state_gauges",
+    "FORECAST_LATENCY",
+    "INGEST_DURATION",
+    "FORECAST_DURATION",
     "metrics_handler",
 ]

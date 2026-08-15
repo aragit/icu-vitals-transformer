@@ -9,6 +9,8 @@ build/
 .pytest_cache/
 .coverage
 htmlcov/
+coverage.xml
+source-code.md
 .DS_Store
 .vscode/
 *.log
