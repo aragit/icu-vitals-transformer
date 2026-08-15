@@ -26,14 +26,7 @@
   <img src="assets/arch.png" alt="Architecture Diagram" width="800" />
 </p>
 
-Most clinical AI demos are black-box neural nets wrapped in disclaimers. This is the opposite: a deterministic, symbolic clinical skill that forecasts patient deterioration from FHIR R4 vitals using nothing more than linear trend extrapolation — fully explainable, fully testable, and fully bounded by a SafetyShell invariant gate.
-It is designed as a reference implementation for how to build high-integrity AI tools using the Model Context Protocol (MCP). The architecture is protocol-native, not protocol-adapted: the clinical logic lives in a pure-Python hexagonal core with zero framework dependencies, while MCP, REST, and A2A surfaces are thin, swappable adapters.
-What you get:
-Deterministic forecasts — same input always produces same output; no model drift, no versioning hell
-SafetyShell guarantees — every output is clamped to physiological bounds, checked for data staleness, and fails closed to a flat-line projection
-Protocol-native composability — drop this into any MCP host or A2A swarm as a skill, not a service
-Zero GPU / zero ML — runs on CPU with predictable latency; no PyTorch, no transformers, no prompt engineering
-Who this is for: AI engineers building clinical agent architectures (e.g., AXIOMIS, SentriXIA) who need a trustworthy, deterministic baseline they can compose, extend, and audit — not a magic box they have to trust.
+
 
 ---
 
@@ -72,16 +65,11 @@ Who this is for: AI engineers building clinical agent architectures (e.g., AXIOM
 
 ## What This Is
 
-A reusable, deterministic clinical micro-skill — not an autonomous agent. It ingests FHIR R4 vital signs, generates deterioration forecasts using least-squares trend extrapolation with clinical uncertainty bounds, and returns DDS (Deterministic Deterioration Score) severity classifications via the Model Context Protocol (MCP) and an optional A2A (Agent-to-Agent) facade.
+Most clinical AI demos are black-box neural nets wrapped in disclaimers. This is the opposite: a deterministic, symbolic clinical skill that forecasts patient deterioration from FHIR R4 vitals using nothing more than linear trend extrapolation — fully explainable, fully testable, and fully bounded by a SafetyShell invariant gate.
+It is designed as a reference implementation for how to build high-integrity AI tools using the Model Context Protocol (MCP). The architecture is protocol-native, not protocol-adapted: the clinical logic lives in a pure-Python hexagonal core with zero framework dependencies, while MCP, REST, and A2A surfaces are thin, swappable adapters.
 
-Designed to be composed into larger clinical agent architectures (e.g., AXIOMIS, SentriXIA). The skill makes predictions; the orchestrator decides what to do with them.
+**Who this is for**: AI engineers building clinical agent architectures (e.g., AXIOMIS, SentriXIA) who need a trustworthy, deterministic baseline they can compose, extend, and audit — not a magic box they have to trust.
 
-## What This Is Not
-
-- **Not an autonomous agent** — no self-directed alerting, escalation, or closed-loop action
-- **Not a monitoring dashboard** — no UI, no real-time charts
-- **Not a replacement for clinical judgment** — deterministic scoring only, no diagnostic claims
-- **Not a neural model** — zero GPU dependency; forecasts are linear extrapolation with explicit uncertainty
 
 ## Key Features
 
