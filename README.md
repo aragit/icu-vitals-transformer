@@ -23,7 +23,7 @@
 </p>
 
 <p align="center">
-  <img src="assets/arch.png" alt="Architecture Diagram" width="800" />
+  <img src="assets/arch2.jpeg" alt="Architecture Diagram" width="800" />
 </p>
 
 
