@@ -11,8 +11,8 @@
   <a href="#"><img src="https://img.shields.io/badge/MCP-2026--07--28-black?logo=modelcontextprotocol" alt="MCP"></a>
   <a href="#"><img src="https://img.shields.io/badge/Prometheus-0.20+-orange?logo=prometheus" alt="Prometheus"></a>
   <a href="#"><img src="https://img.shields.io/badge/Docker-Ready-blue?logo=docker" alt="Docker"></a>
-  <a href="#"><img src="https://img.shields.io/badge/Tests-342%20passing-brightgreen" alt="Tests"></a>
-  <a href="#"><img src="https://img.shields.io/badge/Coverage-94.57%25-green" alt="Coverage"></a>
+  <a href="#"><img src="https://img.shields.io/badge/Tests-311%20passing-brightgreen" alt="Tests"></a>
+  <a href="#"><img src="https://img.shields.io/badge/Coverage-94.16%25-green" alt="Coverage"></a>
   <a href="#"><img src="https://img.shields.io/badge/CI-4%20gates%20green-brightgreen" alt="CI"></a>
   <a href="https://github.com/aragit/icu-vitals-transformer/blob/main/CITATION.cff"><img src="https://img.shields.io/badge/Cite%20this-Repository-blue?logo=GitHub" alt="Cite this repository"></a>
   <a href="#"><img src="https://img.shields.io/badge/License-MIT-green" alt="MIT"></a>
@@ -70,6 +70,13 @@ It is designed as a reference implementation for how to build high-integrity AI 
 **Who this is for**: AI engineers building clinical agent architectures (e.g., AXIOMIS, SentriXIA) who need a trustworthy, deterministic baseline they can compose, extend, and audit — not a magic box they have to trust.
 
 
+## 🚫 What This Is Not
+
+- **Not an autonomous agent.** This is a deterministic MCP tool/skill. It does not initiate actions, hold goals, or maintain conversational state.
+- **Not a neural network.** No ML model, no LLM. Forecasting is linear trend extrapolation with clinical bound clamping.
+- **Not FDA/CE marked.** All output is informational only and requires human clinician review.
+
+
 ## ✨ Key Features
 
 | Capability | Detail |
@@ -79,12 +86,11 @@ It is designed as a reference implementation for how to build high-integrity AI 
 | Temporal Windowing | 5-minute sliding windows anchored to the most recent observation; handles out-of-order messages |
 | Trend Extrapolation | Pure-Python least-squares slope estimation over historical windows; falls back to flat-line when < 2 windows |
 | SafetyShell | Invariant gate: physiological bound clamping, stale-data warning (> 300 s), fail-closed fallback on exception |
-| DDS Scoring | Deterministic Deterioration Score (0–20) with explicit contributing factors; severity mapped to episode state |
-| Episode FSM | Episode lifecycle tracking (NORMAL → WARNING → ALERT → EMERGENCY) with deterministic transitions |
+| DDS Scoring | Deterministic Deterioration Score (0–20) with explicit contributing factors; severity mapped to clinical tiers |
 | Multi-Transport | MCP (stdio / Streamable HTTP), REST v2 |
-| Pluggable Storage | In-memory (dev) or Redis (multi-replica, sorted-set time series, 30-day TTL) |
+| Pluggable Storage | In-memory (dev) or Redis (optional, multi-replica, sorted-set time series, 30-day TTL) |
 | Observability | Label-free Prometheus metrics + structured JSON logging with correlation IDs |
-| Protocol Manifests | mcp.json, SKILL.md for capability negotiation |
+| Protocol Manifests | mcp.json, SKILL.md for MCP capability negotiation |
 
 ## 🏗️ Architecture
 
@@ -103,10 +109,10 @@ See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`docs/SAFETY.md`](docs/SAFE
 | Layer | Path | Responsibility |
 |-------|------|----------------|
 | **Core Domain** | `src/core/domain/*` | Pure Pydantic v2 vital/episode/forecast/assessment contracts |
-| **Core Engines** | `src/core/{forecasting,governance,ingestion,windowing,services,safety}` | Deterministic trend extrapolation, DDS, FHIR parsing, episode FSM, SafetyShell |
+| **Core Engines** | `src/core/{forecasting,governance,ingestion,windowing,services,safety}` | Deterministic trend extrapolation, DDS, FHIR parsing, episode lifecycle, SafetyShell |
 | **Driven Ports** | `src/ports/*.py` | VitalRepository, EpisodeRepository, AssessmentRepository, ForecastBackend protocols |
 | **Driving Adapters** | `src/adapters/{rest,mcp}` | REST v2, FastMCP (stdio/http), observability, CIMD auth |
-| **Driven Adapters** | `src/adapters/storage/*` | In-memory (dev) and Redis (multi-replica) repository impls |
+| **Driven Adapters** | `src/adapters/storage/*` | In-memory (default, dev) and optional Redis (multi-replica) via lazy import repository impls |
 | **Observability** | `src/observability/*` | Label-free Prometheus metrics + JSON structured logging |
 
 ### 🛡️ SafetyShell Invariant Gate
@@ -130,21 +136,21 @@ The shell is constructed in `src/dependencies.py` with optional `on_fallback` an
 
 The Deterministic Deterioration Score (DDS) is a bounded composite (0–20) computed from vital sign deviations. It is not NEWS2 — it is a simplified, deterministic variant designed for agentic tool consumption.
 
-| Tier | DDS Range | Clinical Meaning | Episode State |
-|------|-----------|------------------|---------------|
-| NORMAL | 0 – 2 | No immediate physiological concern | NORMAL |
-| WARNING | 3 – 4 | Mild derangement; trend monitoring warranted | WARNING |
-| ALERT | 5 – 6 | Significant physiology drift; escalate review | ALERT |
-| EMERGENCY | ≥ 7 | Critical thresholds exceeded; treat as urgent | EMERGENCY |
+| Tier | DDS Range | Clinical Meaning |
+|------|-----------|--------|
+| NORMAL | 0 – 2 | No immediate physiological concern |
+| WARNING | 3 – 4 | Mild derangement; trend monitoring warranted |
+| ALERT | 5 – 6 | Significant physiology drift; escalate review |
+| EMERGENCY | ≥ 7 | Critical thresholds exceeded; treat as urgent |
 
-AVPU = Unresponsive automatically scores +3 (altered consciousness). Trend persistence modifiers may add +1 when the episode state is TRENDING_NEGATIVE (R2.1+).
+AVPU = Unresponsive automatically scores +3 (altered consciousness).
 
 ## 🛠️ Tech Stack
 
 - **Python 3.12** + FastAPI + Pydantic v2
 - **Deterministic trend extrapolation** — linear forecasting with clinical uncertainty bounds, enforced by SafetyShell
-- **Pluggable backends** — ForecastBackend protocol allows alternative implementations (neural, API-based)
-- **Pluggable repositories** — VitalsRepository/EpisodeRepository ports allow in-memory (dev) or Redis (multi-replica) storage
+- **ForecastBackends** — ForecastBackend protocol enables future neural/API backends; current implementation is deterministic trend extrapolation only
+- **Pluggable repositories** — VitalsRepository/EpisodeRepository ports allow in-memory (dev) or Redis (optional, multi-replica) storage
 - **MCP 2026-07-28** — stdio and Streamable HTTP transports; capability negotiation; discover_capabilities tool
 - **Prometheus** — label-free observability metrics (no patient_id/episode_id labels)
 - **CIMD/JWT** — bearer-token principal extraction for audit trails
@@ -182,7 +188,7 @@ docker compose -f docker/docker-compose.yml up --build
 | `PORT` | `8000` | Server port |
 | `FORECAST_HORIZONS` | `[60, 240, 720]` | Forecast horizons in minutes (1h, 4h, 12h) |
 | `MCP_SERVER_NAME` | `icu-vitals-transformer` | MCP server name |
-| `REPOSITORY_BACKEND` | `memory` | Storage backend: `memory` (dev) or `redis` (multi-replica) |
+| `REPOSITORY_BACKEND` | `memory` | Storage backend: `memory` (default, dev) or `redis` (optional, multi-replica) |
 | `MCP_TRANSPORT` | `stdio` | MCP transport selector (env var) |
 
 ## 📡 API Reference
@@ -214,15 +220,11 @@ Retrieve the latest windowed vitals, a SafetyShell-bounded forecast, the DDS det
 
 ### `GET /discover`
 
-Capability-negotiation manifest (protocols, tools, resources, safety bounds).
+Capability-negotiation manifest (protocols, tools, safety bounds).
 
 ```bash
 curl http://localhost:8001/discover
 ```
-
-### Legacy `GET /vitals/*` routes
-
-Backward-compatible v1 endpoints (auto-create episodes, `_meta` envelope). Return `Deprecation: true` with a `Link: </v2/vitals/ingest>; rel="alternate"` header. **Error handling**: invalid/unrecognised FHIR Observations are silently skipped with a warning-level log; unrecognised channels are `null` and DDS is computed only over available values. Missing data does **not** raise.
 
 ### `GET /health/liveness` and `GET /health/readiness`
 
@@ -241,10 +243,10 @@ The server exposes tools via the Model Context Protocol:
 | `ingest_vitals` | Accepts FHIR R4 Observation dicts, returns windowed vital signs + episode ID |
 | `get_forecast` | Returns multi-horizon forecast (default 1h; accepts `horizon_minutes`) |
 | `get_deterioration_index` | Computes DDS score with severity classification |
-| `discover_episode` | Resolves the active episode(s) for a patient |
-| `discover_capabilities` | Returns the server capability matrix (tools, resources, safety bounds) |
+| `discover_episode` | Returns the active episode, or a list of all active episodes when multiple exist |
+| `discover_capabilities` | Returns the server capability matrix (tools, safety bounds, LOINC mapping) |
 
-Connect via stdio for local agent orchestrators, or Streamable HTTP (`MCP_TRANSPORT=http`, endpoint `http://localhost:8000/mcp`) for multi-agent orchestrators.
+Connect via stdio for local agent orchestrators, or Streamable HTTP (`MCP_TRANSPORT=http`, endpoint `http://localhost:8000/mcp`) for tool orchestrators.
 
 ### 💻 MCP Tool Example
 
@@ -281,10 +283,8 @@ All metrics are label-free to prevent high-cardinality issues with patient ident
 | `forecast_latency_seconds` | Histogram | Per-horizon forecast latency |
 | `forecast_duration_seconds` | Histogram | Forecast service latency |
 | `ingest_duration_seconds` | Histogram | Ingest + windowing service latency |
-| `trend_computation_latency_seconds` | Histogram | Least-squares trend computation latency |
 | `safety_shell_fallback_total` | Counter | SafetyShell exception fallbacks |
 | `stale_data_warning_total` | Counter | Stale-data warnings triggered |
-| `episode_state` | Gauge | Episode count per state (NORMAL, WARNING, ALERT, EMERGENCY, CRITICAL) |
 
 ### 📝 Structured Logging
 
@@ -296,11 +296,11 @@ JSON-formatted logs with correlation IDs, patient_id, episode_id, and tool_name 
   "level": "INFO",
   "message": "Forecast generated",
   "correlation_id": "abc-123",
-   "episode_id": "E-a3b2c1d4e5f6",
+  "episode_id": "E-a3b2c1d4e5f6",
   "patient_id": "PT-001",
   "tool_name": "get_forecast",
-  "deterioration_index": 4,
-  "severity": "WARNING"
+  "horizon_minutes": 60,
+  "data_freshness_seconds": 42
 }
 ```
 
@@ -314,7 +314,7 @@ pytest -v --cov=src --cov-report=term-missing --cov-fail-under=92
 
 ## 🧭 Architecture Decisions
 
-See [`docs/ADR-001-episode-id-format.md`](docs/ADR-001-episode-id-format.md) for the episode ID format (`E-<uuid>`); IDs are generated at episode creation — clients must capture `episode_id` from the ingest/open response rather than constructing it.
+See [`docs/ADR-001-episode-id-format.md`](docs/ADR-001-episode-id-format.md) for the episode ID format (`E-<uuid>`); IDs are generated at episode creation — clients must capture `episode_id` from the ingest/open response rather than constructing it. Episode IDs are UUID-based (`E-<uuid>`) and uniquely identify a patient session.
 
 ## 💡 Contributing
 
@@ -332,7 +332,7 @@ Commit with clear messages (`fix(clinical): ...`, `feat(adapter): ...`, `docs: .
 
 ## 📚 Citation
 
-If you use `icu-vitals-transformer` in your research, clinical agent architecture, or multi-agent orchestration work, please cite it as follows:
+If you use `icu-vitals-transformer` in your research, clinical agent architecture, or clinical tool orchestration work, please cite it as follows:
 
 
 ```bibtex
