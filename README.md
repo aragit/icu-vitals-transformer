@@ -64,7 +64,7 @@
 >
 > The models are **deterministic scoring tools** — they have no understanding of patient context, comorbidities, medications, or treatment plans. Any clinical deployment **must** include human-in-the-loop oversight, validation against local patient populations, and appropriate governance.
 
-## What This Is
+## 📖 What This Is
 
 Most clinical AI demos are black-box neural nets wrapped in disclaimers. This is the opposite: a deterministic, symbolic clinical skill that forecasts patient deterioration from FHIR R4 vitals using nothing more than linear trend extrapolation — fully explainable, fully testable, and fully bounded by a SafetyShell invariant gate.
 It is designed as a reference implementation for how to build high-integrity AI tools using the Model Context Protocol (MCP). The architecture is protocol-native, not protocol-adapted: the clinical logic lives in a pure-Python hexagonal core with zero framework dependencies, while MCP, REST, and A2A surfaces are thin, swappable adapters.
@@ -72,7 +72,7 @@ It is designed as a reference implementation for how to build high-integrity AI 
 **Who this is for**: AI engineers building clinical agent architectures (e.g., AXIOMIS, SentriXIA) who need a trustworthy, deterministic baseline they can compose, extend, and audit — not a magic box they have to trust.
 
 
-## Key Features
+## ✨ Key Features
 
 | Capability | Detail |
 |---|---|
@@ -88,13 +88,13 @@ It is designed as a reference implementation for how to build high-integrity AI 
 | Observability | Label-free Prometheus metrics + structured JSON logging with correlation IDs |
 | Protocol Manifests | mcp.json, SKILL.md, AGENT_CARD.json for capability negotiation |
 
-## Architecture
+## 🏗️ Architecture
 
 `icu-vitals-transformer` is a **Hexagonal Skill Engine**: clinical logic lives in a pure-Python core (`src/core/`) that depends only on the standard library + Pydantic. Adapters handle REST v2, MCP, A2A, Redis/memory storage, Prometheus observability, and CIMD/JWT auth at the outer rings.
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`docs/SAFETY.md`](docs/SAFETY.md), and [`docs/MIGRATION.md`](docs/MIGRATION.md).
 
-### Inward Dependency Rule (Hexagonal Core Isolation)
+### 🔒 Inward Dependency Rule (Hexagonal Core Isolation)
 
 **`src/core/` and `src/ports/` MUST remain 100 % pure Python** — they import none of `fastapi`, `mcp`, `prometheus_client`, `redis`, or `numpy`. This is enforced as a CI gate:
 
@@ -111,7 +111,7 @@ See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`docs/SAFETY.md`](docs/SAFE
 | **Driven Adapters** | `src/adapters/storage/*` | In-memory (dev) and Redis (multi-replica) repository impls |
 | **Observability** | `src/observability/*` | Label-free Prometheus metrics + JSON structured logging |
 
-### SafetyShell Invariant Gate
+### 🛡️ SafetyShell Invariant Gate
 
 Every forecast output passes through the SafetyShell before reaching any adapter:
 
@@ -128,7 +128,7 @@ input: window + trend_per_hour
 
 The shell is constructed in `src/dependencies.py` with optional `on_fallback` and `on_stale_data` hooks that increment the `safety_shell_fallback_total` and `stale_data_warning_total` counters — core stays framework-free; the Prometheus hooks are wired at the adapter boundary.
 
-## DDS Severity Tiers
+## 📊 DDS Severity Tiers
 
 The Deterministic Deterioration Score (DDS) is a bounded composite (0–20) computed from vital sign deviations. It is not NEWS2 — it is a simplified, deterministic variant designed for agentic tool consumption.
 
@@ -141,7 +141,7 @@ The Deterministic Deterioration Score (DDS) is a bounded composite (0–20) comp
 
 AVPU = Unresponsive automatically scores +3 (altered consciousness). Trend persistence modifiers may add +1 when the episode state is TRENDING_NEGATIVE (R2.1+).
 
-## Tech Stack
+## 🛠️ Tech Stack
 
 - **Python 3.12** + FastAPI + Pydantic v2
 - **Deterministic trend extrapolation** — linear forecasting with clinical uncertainty bounds, enforced by SafetyShell
@@ -152,7 +152,7 @@ AVPU = Unresponsive automatically scores +3 (altered consciousness). Trend persi
 - **Prometheus** — label-free observability metrics (no patient_id/episode_id labels)
 - **CIMD/JWT** — bearer-token principal extraction for audit trails
 
-## Quick Start
+## 🚀 Quick Start
 
 ```bash
 git clone https://github.com/aragit/icu-vitals-transformer.git
@@ -174,7 +174,7 @@ MCP_TRANSPORT=stdio python -m src.adapters.mcp.server
 docker compose -f docker/docker-compose.yml up --build
 ```
 
-## Configuration
+## ⚙️ Configuration
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -189,7 +189,7 @@ docker compose -f docker/docker-compose.yml up --build
 | `REPOSITORY_BACKEND` | `memory` | Storage backend: `memory` (dev) or `redis` (multi-replica) |
 | `A2A_ENABLED` | `false` | Enable the A2A facade (`GET /.well-known/agent.json`, `POST /a2a/tasks`) |
 
-## API Reference
+## 📡 API Reference
 
 ### `POST /v2/vitals/ingest`
 
@@ -236,7 +236,7 @@ Liveness and readiness probes.
 
 Prometheus metrics endpoint (label-free, no patient identifiers).
 
-## MCP Tools
+## 🔧 MCP Tools
 
 The server exposes tools via the Model Context Protocol:
 
@@ -250,7 +250,7 @@ The server exposes tools via the Model Context Protocol:
 
 Connect via stdio for local agent orchestrators, or Streamable HTTP (`MCP_TRANSPORT=http`, endpoint `http://localhost:8000/mcp`) for multi-agent orchestrators.
 
-### MCP Tool Example
+### 💻 MCP Tool Example
 
 ```python
 from mcp import ClientSession, StdioServerParameters
@@ -271,7 +271,7 @@ async with stdio_client(params) as (read, write):
         })
 ```
 
-## A2A (Agent-to-Agent) Facade
+## 🤝 A2A (Agent-to-Agent) Facade
 
 `icu-vitals-transformer` exposes an A2A skill facade (not a full agent), feature-flagged behind `A2A_ENABLED=true`:
 
@@ -294,9 +294,9 @@ curl -X POST http://localhost:8001/a2a/tasks \
 
 When `A2A_ENABLED=false` (default), both A2A routes return **404** and the REST v2 / MCP surfaces are unaffected.
 
-## Observability
+## 📈 Observability
 
-### Metrics (Prometheus)
+### 📊 Metrics (Prometheus)
 
 All metrics are label-free to prevent high-cardinality issues with patient identifiers in production.
 
@@ -313,7 +313,7 @@ All metrics are label-free to prevent high-cardinality issues with patient ident
 | `stale_data_warning_total` | Counter | Stale-data warnings triggered |
 | `episode_state` | Gauge | Episode count per state (NORMAL, WARNING, ALERT, EMERGENCY, CRITICAL) |
 
-### Structured Logging
+### 📝 Structured Logging
 
 JSON-formatted logs with correlation IDs, patient_id, episode_id, and tool_name for distributed tracing.
 
@@ -331,7 +331,7 @@ JSON-formatted logs with correlation IDs, patient_id, episode_id, and tool_name 
 }
 ```
 
-## Testing
+## 🧪 Testing
 
 ```bash
 pytest -v --cov=src --cov-report=term-missing --cov-fail-under=92
@@ -339,11 +339,11 @@ pytest -v --cov=src --cov-report=term-missing --cov-fail-under=92
 
 **CI gate**: `.github/workflows/ci.yml` enforces Ruff, Mypy, zero framework imports in `src/core` + `src/ports`, and ≥ 92 % coverage. See [`docs/MIGRATION.md`](docs/MIGRATION.md).
 
-## Architecture Decisions
+## 🧭 Architecture Decisions
 
 See [`docs/ADR-001-episode-id-format.md`](docs/ADR-001-episode-id-format.md) for the decision to retain deterministic `E-{patient_id}` episode IDs in v0.9.x.
 
-## Contributing
+## 💡 Contributing
 
 Fork the repository → Create a feature branch (`git checkout -b feature/my-fix`) → Ensure all CI gates pass locally:
 
@@ -357,11 +357,11 @@ Commit with clear messages (`fix(clinical): ...`, `feat(adapter): ...`, `docs: .
 
 **Core isolation is mandatory.** Any PR that introduces `fastapi`, `mcp`, `prometheus_client`, `redis`, or `numpy` imports into `src/core/` or `src/ports/` will be rejected by CI.
 
-## Citation
+## 📚 Citation
 
 If you use `icu-vitals-transformer` in your research, clinical agent architecture, or multi-agent orchestration work, please cite it as follows:
 
-
+### 📄 BibTeX
 
 ```bibtex
 @software{icu_vitals_transformer_2026,
@@ -374,7 +374,14 @@ If you use `icu-vitals-transformer` in your research, clinical agent architectur
 }
 ```
 
+### 📚 APA
 
-## License
+Arash. (2026). *ICU Vitals Transformer: A Hexagonal Skill Engine for Deterministic Clinical Forecasting* (Version 0.9.1) [Computer software]. https://github.com/aragit/icu-vitals-transformer
+
+### 💼 IEEE
+
+Arash, "ICU Vitals Transformer: A Hexagonal Skill Engine for Deterministic Clinical Forecasting," GitHub repository, 2026. [Online]. Available: https://github.com/aragit/icu-vitals-transformer
+
+## 📄 License
 
 MIT
