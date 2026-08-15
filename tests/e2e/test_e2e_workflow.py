@@ -132,30 +132,20 @@ async def test_mcp_trend_extrapolation_end_to_end(mcp_server, _trend_history):
 
 
 @pytest.mark.asyncio
-async def test_dual_run_parity_legacy_vs_v2(httpx_client):
-    """Identical obs through v1 and v2 produce equivalent windows + deprecation."""
+async def test_v2_ingest_resolves_episode_and_window(httpx_client):
+    """v2 ingest resolves an episode and windows values to the parsed input."""
     obs = [
         make_fhir_obs("8867-4", 76.0, patient_id="PT-PARITY"),
         make_fhir_obs("8480-6", 118.0, patient_id="PT-PARITY"),
     ]
-
-    legacy = await httpx_client.post(
-        "http://test/vitals/ingest", json={"observations": obs}
-    )
-    assert legacy.status_code == 200
-    assert legacy.headers.get("Deprecation") == "true"
-    assert 'rel="alternate"' in legacy.headers.get("Link", "")
-
-    v2 = await httpx_client.post(
-        "http://test/v2/vitals/ingest",
+    r = await httpx_client.post(
+        f"{_BASE}/v2/vitals/ingest",
         json={"patient_id": "PT-PARITY", "observations": obs},
     )
-    assert v2.status_code == 200
-    assert "clinical_disclaimer" in v2.json()["_meta"]
-
-    # Both transports resolve the same core window (same parsed HR / SBP).
-    legacy_body = legacy.json()
-    v2_body = v2.json()
-    assert legacy_body["heart_rate"] == v2_body["heart_rate"] == 76.0
-    assert legacy_body["systolic_bp"] == v2_body["systolic_bp"] == 118.0
-    assert legacy_body["patient_id"] == v2_body["patient_id"] == "PT-PARITY"
+    assert r.status_code == 200
+    body = r.json()
+    assert body["episode_id"] == "E-PT-PARITY"
+    assert body["patient_id"] == "PT-PARITY"
+    assert body["heart_rate"] == 76.0
+    assert body["systolic_bp"] == 118.0
+    assert "clinical_disclaimer" in body["_meta"]

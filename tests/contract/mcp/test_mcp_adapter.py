@@ -16,7 +16,7 @@ import pytest
 
 from src.adapters.mcp.server import create_mcp_server
 from src.dependencies import reset_dependencies
-from src.mcp_server.server import _vitals_store
+from src.vitals_state import _vitals_store
 
 pytestmark = pytest.mark.contract
 

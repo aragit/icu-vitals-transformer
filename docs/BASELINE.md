@@ -1,18 +1,29 @@
-# BASELINE.md — ICU Vitals Transformer (Pre-Refactor)
+# BASELINE.md — ICU Vitals Transformer (v0.9.1)
 
-This document locks down the **current behavioral contract** of the
-`icu-vitals-transformer` repository as of the Phase 0 baseline. It is the
-source of truth that the Phase 0 backfilled test suite asserts against. Any
-deviation from these behaviors, unless explicitly called out as a
+> **Deprecation notice (v0.9.1):** The v1 REST surface
+> (`src/api/routes/vitals.py` — `POST /vitals/ingest`, `GET /vitals/{current,
+> forecast,deterioration}/{patient_id}`, `GET /health/`, `GET /metrics/`) and the
+> legacy MCP stdio entry point (`src/mcp_server/`) have been **retired and
+> removed**. Use the **v2 REST API** (`/v2/*`) and the **FastMCP** driving
+> adapter (`src/adapters/mcp`). The v2 request lifecycle is episode-keyed:
+> `POST /v2/patients/{patient_id}/episodes` → `POST /v2/vitals/ingest` →
+> `GET /v2/episodes/{episode_id}/{current,forecast,deterioration,discovery}`.
+> Every v2 response embeds the `_meta` envelope (clinical disclaimer +
+> `data_freshness_seconds`). Legacy module paths
+> (`src/ingestion`, `src/forecasting`, `src/governance`, `src/models`,
+> `src/api`, `src/mcp_server`) now live under `src/core/*` / `src/adapters/*`.
+
+This document locks down the **behavioral contract** of the
+`icu-vitals-transformer` repository at v0.9.1. It is the source of truth that
+the test suite asserts against. Any deviation, unless explicitly called out as a
 refactoring objective, is a regression.
 
-> **Scope rule (Phase 0):** No production code under `src/` is modified.
-> This document describes `src/` exactly as it exists at baseline. The
-> "Legacy Limitations" section lists intentional defects/assumptions that
-> later phases are expected to refactor; the test suite asserts the
-> *current* (baseline) behavior, including these limitations, so that
-> refactors can confidently preserve behavior and remove the limitations one
-> at a time.
+> **Scope rule:** `src/core` and `src/ports` contain the framework-free clinical
+> engines and port protocols; `src/adapters`, `src/main`, `src/config`,
+> `src/dependencies`, `src/auth` and `src/observability` are framework wiring.
+> Core and ports are type-checked strictly with no exemptions; the remaining
+> non-core modules (`src/config`, `src/observability`, `src/main`) carry scoped
+> mypy/ruff baseline overrides in `pyproject.toml`.
 
 ---
 
@@ -22,179 +33,234 @@ refactoring objective, is a regression.
 HTTP clients / local agents
    │
    ├──► FastAPI app            (src/main.py)
-   │        └─ /health, /metrics
-   │        └─ /vitals/*         (src/api/routes/vitals.py)
+   │        └─ GET /            (root landing)
+   │        └─ GET /health/liveness
+   │        └─ GET /health/readiness
+   │        └─ GET /metrics
+   │        └─ POST  /v2/patients/{patient_id}/episodes
+   │        └─ POST  /v2/vitals/ingest
+   │        └─ GET   /v2/episodes/{episode_id}/current
+   │        └─ GET   /v2/episodes/{episode_id}/forecast
+   │        └─ GET   /v2/episodes/{episode_id}/deterioration
+   │        └─ GET   /v2/episodes/{episode_id}/discovery
+   │        └─ GET   /discover     (src/adapters/rest/routes/discovery.py)
    │
-   └──► MCP Server (stdio)       (src/mcp_server/server.py)
-            tools: ingest_vitals, get_forecast, get_deterioration_index
+   └──► FastMCP server          (src/adapters/mcp/server.py — create_mcp_server)
+            tools: ingest_vitals, get_forecast,
+                   get_deterioration_index, discover_episode,
+                   discover_capabilities
 
-Shared in-memory state:
-   src/mcp_server/server.py  →  _vitals_store: dict[str, list[dict]]
-   (FastAPI routes import & mutate the SAME global store.)
+Hex core (framework-free): src/core/** + src/ports/**
+Driving adapters:          src/adapters/** (REST + MCP)
+Shared state:              src/vitals_state.py → _vitals_store: dict[str, list[dict]]
+                           (reset in test fixtures; production uses src.dependencies.get_vitals_repo())
 ```
 
-### Request lifecycle (current)
-1. A FHIR R4 `Observation` (or batch) enters either `/vitals/ingest`
+### Request lifecycle (v2)
+1. A FHIR R4 `Observation` (or batch) enters either `POST /v2/vitals/ingest`
    (HTTP) or the `ingest_vitals` MCP tool.
-2. `src.ingestion.fhir_parser.parse_batch` → `parse_observation`
+2. `src/core/ingestion/fhir_parser.parse_batch` → `parse_observation`
    reduces each Observation to a flat record:
-   `{patient_id, vital_type, value, timestamp, unit}`.
-3. Records are appended to the module-global `_vitals_store[patient_id]`,
-   then `src.ingestion.windowing.window_vitals(records, patient_id)`
-   aggregates them into a `VitalSignsWindow`.
-4. `src.forecasting.ensemble.ensemble_forecast(window)` produces three
-   `ForecastResult` objects (horizons 60, 240, 720 min) using the
-   `DeterministicBackend` (`src.forecasting.forecaster.forecast_vitals`).
-5. `src.forecasting.ensemble.ensemble_deterioration_index(forecasts)`
-   collapses the multi-horizon results into one weighted
-   `DeteriorationAssessment`.
+   `{patient_id, vital_type, value, timestamp, unit}` (with unit validation and
+   AVPU resolution — see §9).
+3. Records are appended to the shared `_vitals_store[patient_id]`, then
+   `src/core/windowing/engine.window_vitals(parsed, patient_id, anchor="recent")`
+   aggregates them into a `VitalSignsWindow` (the v2 service anchors on the most
+   recent record), auto-opens/resolves the active episode, and persists the
+   window.
+4. `src/core/forecasting/forecaster.forecast_vitals(window, horizon, trend_per_hour)`
+   produces a single `ForecastResult` (linear trend extrapolation + clinical
+   clamping via the SafetyShell).
+5. `src/core/services/clinical_assessment.assess_episode` runs the forecast, then
+   `src/core/governance/deterioration.compute_dds(...)` + `severity_from_score`
+   to produce the `DeteriorationAssessment` (dds score, severity tier,
+   contributing factors).
 
 ### Component map
 | Concern | Module | Notes |
 |---|---|---|
-| Config | `src/config.py` | `pydantic-settings` `Settings`; defaults: port 8000, horizons 60/240/720. |
-| Ingestion | `src/ingestion/fhir_parser.py` | LOINC → vital_type map (6 codes). |
-| Windowing | `src/ingestion/windowing.py` | 5-minute sliding window from oldest record. |
-| Forecast | `src/forecasting/forecaster.py` | Linear trend extrapolation + clinical clamping. |
-| Backends | `src/forecasting/backends.py` | `ForecastBackend` protocol + `DeterministicBackend`. |
-| Ensemble | `src/forecasting/ensemble.py` | Horizon weights 60:0.5, 240:0.3, 720:0.2. |
-| Governance | `src/governance/deterioration.py`, `severity.py` | NEWS2-inspired scoring. |
-| Models | `src/models/{vitals,forecast,mcp}.py` | Pydantic BaseModel contracts. |
+| Config | `src/config.py` | `pydantic-settings` `Settings`; horizons 60/240/720. |
+| Ingestion | `src/core/ingestion/fhir_parser.py` | LOINC → vital_type map (6 codes) + unit validation. |
+| Windowing | `src/core/windowing/engine.py` | 5-minute sliding window, anchor on most recent record. |
+| Forecast | `src/core/forecasting/forecaster.py` | Linear trend extrapolation + clinical clamping. |
+| Trends | `src/core/forecasting/trends.py` | Per-channel least-squares slope (hourly). |
+| Safety | `src/core/safety/` | SafetyShell: pure copy + clamp to `CLINICAL_BOUNDS`. |
+| Governance | `src/core/governance/{deterioration,severity}.py` | NEWS2-inspired DDS scoring. |
+| Models | `src/core/domain/{vitals,forecast,episode}.py` | Pydantic BaseModel contracts. |
+| Services | `src/core/services/clinical_assessment.py` | Orchestration (ingest→window→forecast→DDS). |
 | Observability | `src/observability/metrics.py` | Prometheus counters/histograms. |
-| MCP | `src/mcp_server/{server,stdio}.py` | stdio transport entry point. |
+| REST adapter | `src/adapters/rest/` | v2 `/v2/*` routes + `_meta` envelope. |
+| MCP adapter | `src/adapters/mcp/` | FastMCP tools + `_meta` envelope. |
 
 ---
 
-## 2. REST API (FastAPI) — Active Routes
+## 2. REST API (FastAPI) — v2 Active Routes
 
-The application is created in `src/main.py`. Routers are mounted under
-`/vitals`, `/health`, `/metrics`.
+The application is created in `src/main.py`. v2 routers are mounted under `/v2`
+(via `src/adapters/rest/routes/vitals_v2.py`) alongside the v2 `/health`,
+`/metrics`, and `/discover` routes.
 
 ### `GET /`
 Root/landing endpoint.
 - Response `200`:
   ```json
-  { "name": "icu-vitals-transformer", "version": "0.1.0", "status": "operational" }
+  { "name": "icu-vitals-transformer", "version": "0.9.1", "status": "operational" }
   ```
 
-### `GET /health/`
+### `GET /health/liveness`
 Liveness probe.
 - Response `200`:
   ```json
-  { "status": "healthy", "service": "icu-vitals-transformer", "version": "0.1.0" }
+  { "status": "ok" }
   ```
 
-### `GET /health/ready`
-Readiness probe.
+### `GET /health/readiness`
+Readiness probe (reports repository component status).
 - Response `200`:
   ```json
-  { "status": "ready", "service": "icu-vitals-transformer", "version": "0.1.0" }
+  { "status": "ready", "components": { "vitals_repository":..., "episode_repository":..., "assessment_repository":... } }
   ```
 
-### `GET /metrics/`
-Prometheus exposition endpoint backed by `prometheus_client.generate_latest()`.
-- Response `200`, media-type `text/plain; version=0.0.4`.
+### `GET /metrics`
+Prometheus exposition endpoint, media-type `text/plain`.
 
-### `POST /vitals/ingest`
-Ingest a batch of FHIR R4 Observations and return the windowed result.
-- Request body (`VitalIngestionRequest`):
+### `POST /v2/vitals/ingest`
+Ingest a batch of FHIR R4 Observations; auto-resolve (or open) the active episode.
+- Request body (`VitalsIngestRequest`):
   ```json
-  { "observations": [ { ...FHIR Observation... } ] }
+  { "patient_id": "PT-001", "observations": [ { ...FHIR Observation... } ] }
   ```
-- Behavior: `parse_batch(observations)` → 400 "No valid observations parsed"
-  if empty; otherwise append to `_vitals_store[patient_id]` and return
-  `window_vitals(parsed, patient_id)` → 400 "Could not window vitals" if `None`.
-  `patient_id` is taken from `parsed[0]["patient_id"]` (defaults to `unknown`).
-- Response `200` → `VitalSignsWindow` JSON.
+- Behavior: `parse_batch` → 400 "No valid observations parsed" if empty;
+  `window_vitals(..., anchor="recent")` → 400 if no valid window;
+  auto-opens a `NORMAL` episode for the patient when none is active.
+- Response `200` → windowed `VitalSignsWindow` JSON, plus `episode_id` and `_meta`.
 
-### `GET /vitals/current/{patient_id}`
-Return the latest windowed vitals for a patient.
-- 404 if no records for `patient_id`; 400 if windowing yields no valid window.
-- Response `200` → `VitalSignsWindow` JSON.
+### `POST /v2/patients/{patient_id}/episodes`
+Explicitly open a new monitoring episode for a patient.
+- Response `200` → `{ episode_id, patient_id, ...episode fields, _meta }`.
 
-### `GET /vitals/forecast/{patient_id}`
-Return the multi-horizon forecast for a patient.
-- 404 if no records; 400 if windowing yields no valid window.
-- Response `200` → `list[ForecastResult]` (exactly 3 elements: 60, 240, 720 min).
+### `GET /v2/episodes/{episode_id}/current`
+Latest `VitalSignsWindow` for an episode.
+- 404 if the episode is unknown or no vitals are stored.
+- Response `200` → `VitalSignsWindow` JSON + `episode_id` + `_meta`.
 
-### `GET /vitals/deterioration/{patient_id}`
-Return the ensemble deterioration assessment for a patient.
-- 404 if no records; 400 if windowing yields no valid window.
-- Response `200` → `DeteriorationAssessment` JSON.
+### `GET /v2/episodes/{episode_id}/forecast?horizon_minutes=60`
+Single-horizon trend forecast for an episode (`horizon_minutes` ∈ [60,720],
+default 60).
+- 404 if the episode/vitals are unknown.
+- Response `200` → `ForecastResult` JSON + `_meta`.
+
+### `GET /v2/episodes/{episode_id}/deterioration`
+DDS index, severity tier and contributing factors for an episode's latest
+window.
+- 404 if the episode/vitals are unknown.
+- Response `200` → `DeteriorationAssessment` JSON (`ensemble_score`, `severity`,
+  `contributing_factors`) + `episode_id` + `_meta`.
+
+### `GET /v2/episodes/{episode_id}/discovery`
+List the active vital channels present in an episode's latest window.
+- Response `200` → `{ episode_id, channels: [...], _meta }`.
+
+### `GET /discover`
+Capability matrix (registered tools, resources, safety bounds).
+
+### `_meta` envelope
+Every `/v2/*` payload embeds:
+```json
+"_meta": { "clinical_disclaimer": "<CLINICAL_SAFETY_DISCLAIMER>", "data_freshness_seconds": <int> }
+```
 
 ---
 
-## 3. MCP Server Tools — Active Definitions
+## 3. MCP Tools — v2 (FastMCP)
 
-Defined in `src/mcp_server/server.py`. The three tools are exposed via the
-`list_tools` handler; invocation is routed by `call_tool`.
+Defined in `src/adapters/mcp/tools.py`, registered onto a `FastMCP` instance by
+`src/adapters/mcp/server.create_mcp_server()`. Invocation is via
+`server.call_tool(name, arguments)`. All tools return JSON dicts embedding the
+`_meta` envelope (clinical disclaimer + data freshness).
 
 ### `ingest_vitals`
-- Schema: `src.models.mcp.IngestVitalsInput` →
-  `{ patient_id: str, observations: list[dict] }`.
-- Behavior: parse batch, store into `_vitals_store`, window and return the
-  `VitalSignsWindow` (JSON-serialized). On failure returns a JSON error:
-  `{"error": "No valid observations parsed"}` or
-  `{"error": "Could not window vitals"}`.
+- Input: `{ patient_id: str, observations: list[dict] }` (both required).
+- Behavior: parse batch → window (anchor=recent) → persist → open/initialize the
+  active episode; returns the `VitalSignsWindow` (+ `episode_id`, `_meta`).
+- Raises (runtime-wrapped) on empty/invalid observations
+  (`{ "error": "No valid observations parsed" }`, etc.).
 
 ### `get_forecast`
-- Schema: `src.models.mcp.GetForecastInput` →
-  `{ patient_id: str, horizon_minutes: int (60..720, default 60) }`.
-- Behavior: window stored records, run `ensemble_forecast`, return the
-  `ForecastResult` whose `horizon_minutes` matches the requested one.
-- Errors: `{"error": "No vitals stored for {patient_id}"}`,
-  `{"error": "Could not window vitals"}`,
-  `{"error": "Horizon {horizon} not available"}`.
+- Input: `{ episode_id: str, horizon_minutes?: int (60..720, default 60) }`.
+- Behavior: window → trend → SafetyShell-sanitized forecast; returns
+  `ForecastResult` (+ `_meta`). Error for unknown episode.
 
 ### `get_deterioration_index`
-- Schema: `src.models.mcp.GetDeteriorationInput` → `{ patient_id: str }`.
-- Behavior: window stored records, run `ensemble_forecast` then
-  `ensemble_deterioration_index`; return the `DeteriorationAssessment`
-  (JSON-serialized). Errors mirror `get_forecast`.
+- Input: `{ episode_id: str }`.
+- Behavior: run `get_forecast`, then `compute_dds`; returns
+  `DeteriorationAssessment` (`ensemble_score`, `severity`,
+  `contributing_factors`) + `episode_id` + `_meta`.
+
+### `discover_episode`
+- Input: `{ patient_id: str }`.
+- Behavior: returns the active episode, or an MRTR disambiguation payload when
+  multiple active episodes exist.
+
+### `discover_capabilities`
+- Input: `{}`.
+- Behavior: returns the server capability matrix (tools, resources, safety bounds).
 
 ### Transport entry point
-`src/mcp_server/stdio.py` runs `mcp.server.stdio` over stdio. Invoked via
-`python -m src.mcp_server.stdio`.
+`src/adapters/mcp/server.run_mcp_server` selects `MCP_TRANSPORT` (`http` →
+streamable-http, `stdio` for local dev).
 
 ---
 
 ## 4. Data Contracts (Models)
 
-### `VitalSignsWindow` (`src/models/vitals.py`)
+`src/core/domain/{vitals,forecast,episode}.py`. Bounds are expressed as the
+`CLINICAL_BOUNDS` constants and applied by `clamp()` at construction and
+serialization — there are **no** `Field(ge=, le=)` validators (see §9.3). An
+out-of-range value constructs successfully and is clamped downstream by the
+SafetyShell.
+
+### `VitalSignsWindow` (`src/core/domain/vitals.py`)
 ```
 patient_id: str
 window_start, window_end: datetime
 heart_rate, systolic_bp, diastolic_bp, spo2, respiratory_rate, temperature:
-    Optional[float]  (clamped via Field ge/le constraints)
+    Optional[float]
 avpu: Optional[str]   (pattern ^[AVPU]$)
 ```
-Constraints enforced: heart_rate/systolic_bp ∈ [0,300]; diastolic_bp ∈ [0,200];
+Physiological caps: heart_rate/systolic_bp ∈ [0,300]; diastolic_bp ∈ [0,200];
 spo2 ∈ [0,100]; respiratory_rate ∈ [0,60]; temperature ∈ [30,45].
 
-### `ForecastResult` (`src/models/forecast.py`)
+### `ForecastResult` (`src/core/domain/forecast.py`)
 ```
 patient_id: str
 horizon_minutes: int   [60..720]
 forecasted_vitals, uncertainty_lower, uncertainty_upper: VitalSignsWindow
 deterioration_index: float  [0..20]
 severity: str   ^(NORMAL|WARNING|ALERT|EMERGENCY)$
-generated_at: datetime  (tz-aware UTC at generation)
+data_freshness_seconds: int
 ```
 
-### `DeteriorationAssessment` (`src/models/forecast.py`)
+### `DeteriorationAssessment` (`src/core/domain/forecast.py`)
 ```
 patient_id: str
 ensemble_score: float  [0..20]
 severity: str   ^(NORMAL|WARNING|ALERT|EMERGENCY)$
 contributing_factors: list[str]
-assessed_at: datetime
+```
+(`ensemble_score` is the DDS score clipped to [0,20]; there is no weighted
+multi-horizon ensemble in v2.)
+
+### `_meta` envelope (all v2 REST/MCP responses)
+```
+{ "clinical_disclaimer": "<CLINICAL_SAFETY_DISCLAIMER>", "data_freshness_seconds": <int> }
 ```
 
 ---
 
 ## 5. Core Algorithms (Baseline Behavior)
 
-### 5.1 FHIR parsing — `parse_observation`
+### 5.1 FHIR parsing — `parse_observation` (`src/core/ingestion/fhir_parser.py`)
 - Accepts only `resourceType == "Observation"` (else `ValueError`).
 - `patient_id`: from `subject.reference` with `Patient/` stripped; defaults
   to `"unknown"` when absent.
@@ -215,46 +281,53 @@ assessed_at: datetime
 - `timestamp`: `effectiveDateTime` → `issued` → `datetime.utcnow().isoformat()`.
 - `unit`: `valueQuantity.unit` (None if valueQuantity absent).
 
-### 5.2 Windowing — `window_vitals`
+### 5.2 Windowing — `window_vitals` (`src/core/windowing/engine.py`)
 - Empty input → `None`.
 - Filters records by `patient_id`; if none for patient → `None`.
-- **Sorts records by `timestamp` as a lexicographic string** (not parsed
-  datetime). For ISO-8601 UTC strings this is equivalent; mixed offset
-  formats can sort incorrectly (see Limitations).
-- `window_start = oldest.timestamp`; `window_end = window_start + 5 min`
+- `anchor` is a required argument (`"oldest"` | `"recent"`); the v2 service uses
+  `"recent"` (window spans the most-recent record + 5 min). The engine also
+  supports `"oldest"` (legacy v1 default behaviour — see §6).
+- Sorts records by `timestamp` as a lexicographic string (ISO-8601 UTC safe).
+- `window_start = anchor record timestamp`; `window_end = window_start + 5 min`
   (default `window_minutes=5`).
-- Only records with `timestamp <= window_end` are included.
+- Only records within the window are included.
 - Aggregates each vital type by **mean** (rounded to 2 dp).
 - Non-numeric values are logged and skipped (excluded from mean).
-- `avpu` is **not aggregated** — the returned window always has `avpu=None`.
+- `avpu` is aggregated separately (last non-empty wins) and is reachable
+  via ingestion (SNOMED CT resolution — see §9.1).
 
-### 5.3 Forecasting — `forecast_vitals`
+### 5.3 Forecasting — `forecast_vitals` (`src/core/forecasting/forecaster.py`)
 - Flat linear extrapolation:
   `extrapolated = current + trend_per_hour * (horizon_minutes / 60)`.
-- **Default `trend_per_hour` is `0.0` for every field** → flat-line
-  extrapolation (forecast == current within that horizon).
-- Each extrapolated value is **clamped** to clinical bounds:
-  heart_rate/systolic_bp ∈ [0,300], diastolic_bp ∈ [0,200], spo2 ∈ [0,100],
-  respiratory_rate ∈ [0,60], temperature ∈ [30,45].
+- Trend slopes are computed from the patient's prior windows via
+  `src/core/forecasting/trends.compute_channel_slope` (per-channel least
+  squares, hourly); with a single window every trend defaults to `0.0`
+  (flat-line).
+- Each extrapolated value is **clamped** to clinical bounds (via `clamp()`
+  and the SafetyShell): heart_rate/systolic_bp ∈ [0,300], diastolic_bp ∈
+  [0,200], spo2 ∈ [0,100], respiratory_rate ∈ [0,60], temperature ∈ [30,45].
 - `None` channels stay `None` (no imputation).
 - Uncertainty bounds: `uncertainty(h) = 2.0 * (1 + 0.1 * h/60)`;
-  lower = `clamp(extrapolate - uncertainty)`, upper = `clamp(...) + uncertainty`.
-  Bounds grow with horizon (1h≈2.2, 4h≈2.8, 12h≈4.4).
-- `deterioration_index` initialized to `0.0` and `severity` to `"NORMAL"`;
-  the **ensemble layer overwrites** these.
+  lower = `clamp(extrapolate - uncertainty)`, upper = `extrapolate + uncertainty`
+  (lower/upper clamped, upper re-anchored ≥ extrapolated). Bounds grow with
+  horizon (1h≈2.2, 4h≈2.8, 12h≈4.4).
+- `deterioration_index` defaults to `0.0` and `severity` to `"NORMAL"` in the
+  raw forecast; v2 scores the forecast via `assess_episode` (§5.4).
 
-### 5.4 Ensemble — `ensemble_forecast` / `ensemble_deterioration_index`
-- Generates forecasts at horizons `[60, 240, 720]`.
-- For each horizon, computes `compute_deterioration_index` and
-  `severity_from_score`, overwriting the placeholders above.
-- `HORIZON_WEIGHTS = {60: 0.5, 240: 0.3, 720: 0.2}` (sum to 1.0).
-- `ensemble_deterioration_index` returns the weighted mean of per-horizon
-  `deterioration_index`, the **max** severity tier across horizons, and a
-  de-duplicated list of contributing factors (order: first appearance).
+### 5.4 Assessment — DDS (v2)
+- `ClinicalAssessmentService.assess_episode` runs a single-horizon forecast
+  (`forecast_episode`, default 60 min) then classifies via DDS:
+  `compute_dds(forecast.forecasted_vitals)` → `(score, factors)`,
+  `severity_from_score(score)`, `ensemble_score = round(min(score, 20.0), 2)`.
+- (The legacy multi-horizon weighted ensemble — `ensemble_forecast` /
+  `ensemble_deterioration_index` / `HORIZON_WEIGHTS` — was retired in v0.9.1;
+  v2 scores a single trend-anchored forecast. See §9.)
+- `contributing_factors` = DDS pathology factors + any forecast-level factors
+  (e.g. `heart_rate_trend`); max possible DDS score = 20.
 
-### 5.5 Governance — scoring
-- `compute_deterioration_index(vitals, trend="stable")` → `(score, factors)`.
-- NEWS2-inspired per-vital scoring (see `src/governance/deterioration.py`):
+### 5.5 Governance — scoring (`src/core/governance/{deterioration,severity}.py`)
+- `compute_dds(vitals, trend="stable")` → `(score, factors)`.
+- NEWS2-inspired per-vital scoring:
   - RR: `<8 or >25` → 3; `>20` → 2.
   - SpO2: `<91` → 3; `<93` → 2; `<95` → 1.
   - SBP: `<90 or >220` → 3; `<100` → 2.
@@ -266,104 +339,90 @@ assessed_at: datetime
 - `severity_from_score(score, trend="stable")`:
   `>=7 or "critical"` → EMERGENCY; `>=5` → ALERT; `>=3` → WARNING; else NORMAL.
 - Risk tiers exposed at the model layer are `NORMAL/WARNING/ALERT/EMERGENCY`.
-  *(The epic's LOW/MEDIUM/HIGH/CRITICAL naming is the future-state target
-  during the governance refactor; the baseline emits the four tiers above.)*
 
 ---
 
-## 6. Legacy Limitations (refactor targets)
+## 6. Legacy Limitations
 
-These are intentional baseline constraints that Phase 0 tests assert, and
-that later phases are designed to remove:
+These are constraints carried over from the Phase 0 baseline; each notes its
+v0.9.1 status. The Phase 0 backfilled tests asserted the baseline behaviour
+(including these); v0.9.1 retires several (see §9).
 
-1. **Global module state.** All persistence lives in the module-global
-   `src/mcp_server/server.py:_vitals_store`. FastAPI routes (`vitals.py`)
-   import and mutate this same dict directly. There is no per-request
-   isolation, no persistence, and reset on process restart.
-2. **Window anchor = oldest record.** `window_vitals` anchors its 5-minute
-   window on `patient_records[0]` (the oldest timestamp after sorting)
-   rather than on the **most recent** observation. This means a patient's
-   "current window" reflects a trailing slice anchored in the past.
-3. **Flat-line extrapolation by default.** With `trend_per_hour` defaulting
-   to `0.0` everywhere, `forecast_vitals` is a no-op extrapolation
-   (forecast == current). Trend is never computed from prior windows.
-4. **No unit normalization.** `parse_observation` preserves whatever
-   `valueQuantity.unit` string arrives (e.g. `"bpm"`, `"mmHg"`); there is no
-   conversion between unit systems (e.g. °F ↔ °C) or rejection of
-   non-standard units.
-5. **Lexicographic timestamp sorting.** Records are sorted by string compare
-   of `timestamp`. Mixed timezone offset representations
-   (`Z` vs `+00:00`, or non-UTC offsets) can sort incorrectly.
-6. **`avpu` is never populated by the ingest/window pipeline.** No LOINC
-   code maps to consciousness, so `VitalSignsWindow.avpu` is always `None`
-   unless set directly on the model. The deterioration engine's AVPU
-   branch is therefore unreachable through normal ingestion.
-7. **NEWS2-inspired, not NEWS2.** Thresholds loosely follow NEWS2 but are
-   not the exact NEWS2 scale (e.g. the AVPU score and some cut points
-   differ). Documented as the baseline contract.
-8. **Single-observation window bias.** Because the window is anchored on
-   the oldest record with a 5-minute span, a single observation yields a
-   window equal to that one point (no averaging possible).
+1. **Global module state.** Persistence still uses the module-global
+   `_vitals_store` (`src/vitals_state.py`, a `dict`). (Partial mitigation:
+   `src.dependencies.get_vitals_repo()` exposes a repository port for new code;
+   test fixtures reset the shared dict.) **[partially mitigated]**
+2. **Window anchor.** The windowing *engine* supports both `"oldest"` and
+   `"recent"`; v1 pinned `"oldest"` (oldest-record anchor). v0.9.1 service
+   uses `"recent"`. **[retired by v0.9.1]**
+3. **Flat-line extrapolation by default.** A single window has no trend history,
+   so the per-channel slope defaults to `0.0` and the forecast is flat; trend is
+   only applied when ≥2 prior windows exist. **[current behaviour; mitigated
+   when history exists]**
+4. **No unit normalization.** `parse_observation` preserves `valueQuantity.unit`
+   and validates it against an accepted set (§9.2); there is no cross-system
+   conversion (°F ↔ °C). **[unit validation added v0.9.1; no conversion]**
+5. **Lexicographic timestamp sorting.** Records are sorted by string compare of
+   `timestamp`; mixed timezone offset representations can sort incorrectly.
+   **[still applies]**
+6. **`avpu` reachability.** AVPU is resolvable via SNOMED CT `valueCodeableConcept`
+   (§9.1); numeric channels never carry it. **[reached via ingestion v0.9.1]**
+7. **NEWS2-inspired, not NEWS2.** Thresholds loosely follow NEWS2 but are not
+   the exact NEWS2 scale. **[still applies]**
+8. **Single-observation window bias.** With one observation the window equals that
+   single point (no averaging). **[still applies]**
 
 ---
 
-## 7. Observability Surface (Baseline)
+## 7. Observability Surface
 
-Counters (label-free, by design — patient_id never appears as a label):
+Counters (label-free — patient_id never appears as a label):
 `vitals_ingested_total`, `forecasts_generated_total`,
 `assessments_total`, `mcp_tool_calls_total`.
 
-Histograms: `forecast_latency_seconds`, `ingest_duration_seconds`,
-`forecast_duration_seconds`.
+Histograms: `forecast_duration_seconds`, `ingest_duration_seconds`.
 
 `/metrics` exposes the full Prometheus exposition via `generate_latest()`.
 
 ---
 
-## 8. Phase 0 Verification Matrix
+## 8. Phase 0/v0.9.1 Verification Matrix
 
 | Criterion | How validated |
 |---|---|
-| `src/` untouched | `git diff --stat` shows no `src/` entries. |
-| Baseline behavior | `docs/BASELINE.md` (this file). |
-| Tests pass | `pytest` (all markers registered via `pytest.ini`). |
+| v2 core & adapters | `src/core`, `src/ports`, `src/adapters` (strict). |
+| Baseline behaviour | `docs/BASELINE.md` (this file). |
+| Tests pass | `pytest` (markers `unit`/`contract`/`integration`/`e2e`/`property` registered via `pytest.ini`). |
 | Coverage ≥ 80% on `src/` | `pytest --cov=src --cov-fail-under=80`. |
 | `ruff` clean | `ruff check src/ tests/`. |
-| `mypy` clean | `mypy src/` (see mypy baseline-lock overrides in `pyproject.toml`). |
+| `mypy` clean | `python -m mypy src/` (scoped overrides for `src/config`, `src/observability`, `src/main` in `pyproject.toml`). |
 
 ---
 
-## 9. Phase Refinements (v0.9.0)
+## 9. Phase Refinements (v0.9.x)
 
-Behavior changes introduced between the Phase 0 baseline and the v0.9.0
-release. Tests for each live under `tests/unit/` and `tests/integration/`.
+Behavior changes introduced after the Phase 0 baseline that are now part of the
+v0.9.1 contract:
 
 ### 9.1 Consciousness (AVPU) through the ingest pipeline
 - `parse_observation` now resolves a FHIR R4 `valueCodeableConcept` against a
   SNOMED CT code map (`248234008`→A Alert, `300202002`→V Voice, `450847002`→P
   Pain, `422768004`→U Unresponsive) and falls back to `display` text. The
-  resolved letter is emitted on **both** `value` and `avpu`, so an AVPU
-  observation reuses any LOINC (e.g. `8867-4`) and flows through the same
-  window/trend path as numeric vitals.
-- `VitalSignsWindow.avpu` is therefore reachable via normal ingestion
-  (retires BASELINE §6 #6). `compute_deterioration_index` scores
-  `avpu != "A"` at 3 and the engine propagates it to the DDS forecast and
+  resolved letter is emitted on both `value` and `avpu`, so an AVPU observation
+  flows through the same window/trend path as numeric vitals.
+- `VitalSignsWindow.avpu` is therefore reachable via normal ingestion (retires
+  BASELINE §6 #6). The DDS engine scores `avpu != "A"` at 3 and propagates
   `altered_consciousness_{A|V|P|U}` factors.
-- `update_vitals` in `src/core/windowing/engine.py:100` captures the latest
-  `avpu` across the window (last non-empty wins) and aggregates numeric
-  channels via mean, so a window mixing a quantity and an AVPU observation on
-  the same LOINC keeps both signals.
 
 ### 9.2 Unit validation at parse time
 - `parse_observation` validates `valueQuantity.unit` against an accepted set
   per vital type (heart_rate: `bpm`/`beats/min`; blood_pressure: `mmHg`/`mm
   Hg`; spo2: `%`/`percent`; respiratory_rate: `breaths/min`/`rpm`;
   temperature: `°C`/`celsius`). Out-of-set units (e.g. `°F`, `kg`, `mm[Hg]`
-  without space) emit
-  `WARNING ... Non-standard unit ... dropping` and the observation is
-  excluded from the parse result (retires BASELINE §6 #4 for the
-  supported vitals). `valueCodeableConcept`/`valueString` observations carry
-  no `unit` and are never rejected.
+  without space) emit `WARNING ... Non-standard unit ... dropping` and the
+  observation is excluded from the parse result (retires BASELINE §6 #4 for the
+  supported vitals). `valueCodeableConcept`/`valueString` observations carry no
+  `unit` and are never rejected.
 
 ### 9.3 Domain bounds live in the model, not pydantic `Field` constraints
 - The physiological caps (heart_rate/systolic_bp ∈ [0,300], diastolic_bp ∈
@@ -373,31 +432,32 @@ release. Tests for each live under `tests/unit/` and `tests/integration/`.
   serialization — there are **no** `Field(ge=, le=)` validators on
   `VitalSignsWindow`. A projection with an out-of-range value (e.g.
   `heart_rate=350`) constructs successfully and is clamped downstream by the
-  SafetyShell, rather than raising `ValidationError` (retires BASELINE §6
-  #3's validator-as-bound interpretation).
+  SafetyShell, rather than raising `ValidationError` (retires BASELINE §4's
+  "Field ge/le" interpretation and §6 #3).
 
 ### 9.4 SafetyShell immutability + clamp
-- `SafetyShell.validate` is a pure function of `(ForecastResult, VitalSignsWindow)`:
-  it builds a **copy** and never mutates the caller's `ForecastResult`, its
-  nested `forecasted_vitals`/`uncertainty_lower`/`uncertainty_upper` windows,
-  or `contributing_factors`. The returned forecasted and bounds values are
-  clamped to `CLINICAL_BOUNDS`; `uncertainty_upper < forecasted` on a field is
-  re-anchored to the forecasted value (the upper bound must envelope the
-  point estimate).
+- `src/core/safety/`: `SafetyShell.validate` is a pure function of
+  `(ForecastResult, VitalSignsWindow)` — it builds a **copy** and never mutates
+  the caller's `ForecastResult`, its nested
+  `forecasted_vitals`/`uncertainty_lower`/`uncertainty_upper` windows, or
+  `contributing_factors`. The returned forecasted and bounds values are clamped
+  to `CLINICAL_BOUNDS`; `uncertainty_upper < forecasted` on a field is
+  re-anchored to the forecasted value (the upper bound must envelope the point
+  estimate).
 
 ### 9.5 Episode `available_vitals`
 - `available_vitals` on an `Episode` is derived **only** from the observed
   `VitalSignsWindow` (the seven numeric fields plus `avpu`) — it is never
-  overwritten from assessment `contributing_factors`, which include
-  scoring artifacts such as `heart_rate_critical`. `discover_channels`
-  returns this list and is safe to call after `transition`.
+  overwritten from assessment `contributing_factors`, which include scoring
+  artifacts such as `heart_rate_critical`. `discover_channels` returns this
+  list and is safe to call after `transition`.
 
 ### 9.6 DDS severity tiers
-- Tier boundaries (see `src/governance/severity.py`,
-  mirrored in `manifests/mcp.json` and `manifests/SKILL.md`):
+- Tier boundaries (see `src/core/governance/severity.py`, mirrored in
+  `manifests/mcp.json` and `manifests/SKILL.md`):
   `NORMAL` 0–2, `WARNING` 3–4, `ALERT` 5–6, `EMERGENCY` ≥7.
   Risk tiers exposed by the baseline are `NORMAL/WARNING/ALERT/EMERGENCY`
-  (consistent with BASELINE §5.5).
+  (consistent with §5.5).
 
 ### 9.7 Version source
 - `app_version` is read dynamically from installed package metadata in

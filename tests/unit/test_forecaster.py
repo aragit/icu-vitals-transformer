@@ -1,6 +1,6 @@
 """Unit tests for deterministic forecasting (baseline contract).
 
-Pin ``src.forecasting.forecaster`` behavior: flat-line default trend,
+Pin ``src.core.forecasting.forecaster`` behavior: flat-line default trend,
 clinical bound clamping, growing uncertainty with horizon, and null-channel
 propagation. See docs/BASELINE.md §5.3.
 """
@@ -9,14 +9,14 @@ from datetime import timedelta
 
 import pytest
 
-from src.forecasting.forecaster import (
+from src.core.domain.vitals import VitalSignsWindow
+from src.core.forecasting.forecaster import (
     BOUNDS,
-    _clamp,
-    _compute_uncertainty,
-    _extrapolate_value,
+    clamp,
+    compute_uncertainty,
+    extrapolate_value,
     forecast_vitals,
 )
-from src.models.vitals import VitalSignsWindow
 
 pytestmark = pytest.mark.unit
 
@@ -39,34 +39,34 @@ def _full_window(patient_id: str = "PT-001", hr=72, sbp=120, dbp=80, spo2=98, rr
 
 class TestExtrapolateValue:
     def test_no_trend_is_flat(self):
-        assert _extrapolate_value(100.0, 60, 0.0) == 100.0
-        assert _extrapolate_value(100.0, 720, 0.0) == 100.0
+        assert extrapolate_value(100.0, 60, 0.0) == 100.0
+        assert extrapolate_value(100.0, 720, 0.0) == 100.0
 
     def test_trend_applied_per_hour(self):
         # 1h horizon, +5/hr -> +5
-        assert _extrapolate_value(100.0, 60, 5.0) == 105.0
+        assert extrapolate_value(100.0, 60, 5.0) == 105.0
         # 12h horizon, +5/hr -> +60
-        assert _extrapolate_value(100.0, 720, 5.0) == 160.0
+        assert extrapolate_value(100.0, 720, 5.0) == 160.0
 
     def test_negative_trend(self):
-        assert _extrapolate_value(100.0, 60, -10.0) == 90.0
+        assert extrapolate_value(100.0, 60, -10.0) == 90.0
 
     def test_none_pass_through(self):
-        assert _extrapolate_value(None, 60, 5.0) is None
+        assert extrapolate_value(None, 60, 5.0) is None
 
 
 class TestUncertainty:
     def test_uncertainty_grows_with_horizon(self):
-        u1 = _compute_uncertainty(60)
-        u4 = _compute_uncertainty(240)
-        u12 = _compute_uncertainty(720)
+        u1 = compute_uncertainty(60)
+        u4 = compute_uncertainty(240)
+        u12 = compute_uncertainty(720)
         assert u1 < u4 < u12
 
     def test_uncertainty_values(self):
         # baseline: 2.0 * (1 + 0.1 * h/60)
-        assert _compute_uncertainty(60) == 2.2
-        assert _compute_uncertainty(240) == 2.8
-        assert _compute_uncertainty(720) == 4.4
+        assert compute_uncertainty(60) == 2.2
+        assert compute_uncertainty(240) == 2.8
+        assert compute_uncertainty(720) == 4.4
 
     def test_bounds_spread_grows_with_horizon(self):
         current = _full_window()
@@ -77,7 +77,7 @@ class TestUncertainty:
             return r.uncertainty_upper.heart_rate - r.uncertainty_lower.heart_rate
         assert spread(r1) < spread(r4) < spread(r12)
         # spread == 2 * uncertainty (within floating point tolerance).
-        assert spread(r1) == pytest.approx(round(2 * _compute_uncertainty(60), 2))
+        assert spread(r1) == pytest.approx(round(2 * compute_uncertainty(60), 2))
 
     def test_bounds_bracket_forecast(self):
         current = _full_window()
@@ -88,23 +88,23 @@ class TestUncertainty:
 
 class TestClamp:
     def test_clamp_within_bounds(self):
-        assert _clamp("heart_rate", 150.0) == 150.0
-        assert _clamp("spo2", 95.0) == 95.0
+        assert clamp("heart_rate", 150.0) == 150.0
+        assert clamp("spo2", 95.0) == 95.0
 
     def test_clamp_upper_bound(self):
-        assert _clamp("heart_rate", 500.0) == BOUNDS["heart_rate"][1]
-        assert _clamp("temperature", 99.0) == BOUNDS["temperature"][1]
+        assert clamp("heart_rate", 500.0) == BOUNDS["heart_rate"][1]
+        assert clamp("temperature", 99.0) == BOUNDS["temperature"][1]
 
     def test_clamp_lower_bound(self):
-        assert _clamp("heart_rate", -10.0) == BOUNDS["heart_rate"][0]
-        assert _clamp("spo2", -5.0) == BOUNDS["spo2"][0]
+        assert clamp("heart_rate", -10.0) == BOUNDS["heart_rate"][0]
+        assert clamp("spo2", -5.0) == BOUNDS["spo2"][0]
 
     def test_clamp_none(self):
-        assert _clamp("heart_rate", None) is None
+        assert clamp("heart_rate", None) is None
 
     def test_clamp_unknown_field_uses_default_bounds(self):
         # Unknown field falls back to (0, 999).
-        assert _clamp("unknown", 5000.0) == 999.0
+        assert clamp("unknown", 5000.0) == 999.0
 
 
 class TestForecastVitals:
@@ -181,7 +181,7 @@ class TestForecastVitals:
         # therefore yields None bounds. Lock that behavior here.
         current = _full_window(hr=0)
         result = forecast_vitals(current, 60)
-        # forecasted uses _extrapolate (handles 0.0), but bounds use the
+        # forecasted uses extrapolate (handles 0.0), but bounds use the
         # truthiness guard so heart_rate bounds are None.
         assert result.uncertainty_lower.heart_rate is None
         assert result.uncertainty_upper.heart_rate is None

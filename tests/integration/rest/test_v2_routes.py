@@ -5,7 +5,7 @@ import pytest
 
 from src.dependencies import reset_dependencies
 from src.main import app
-from src.mcp_server.server import _vitals_store
+from src.vitals_state import _vitals_store
 
 BASE = "http://test"
 
@@ -221,15 +221,3 @@ async def test_correlation_id_generated():
     async with httpx.AsyncClient(transport=transport, base_url=BASE) as client:
         response = await client.get("/health/liveness")
     assert response.headers["X-Request-ID"]
-
-
-
-@pytest.mark.asyncio
-async def test_legacy_vitals_route_marked_deprecated():
-    """Legacy v1 ``/vitals/*`` routes carry deprecation + migration links."""
-    transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(transport=transport, base_url=BASE) as client:
-        obs = [make_fhir_obs("8867-4", 72.0)]
-        response = await client.post("/vitals/ingest", json={"observations": [obs]})
-    assert response.headers.get("Deprecation") == "true"
-    assert 'rel="alternate"' in response.headers.get("Link", "")

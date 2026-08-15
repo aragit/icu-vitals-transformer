@@ -8,7 +8,7 @@ from httpx import ASGITransport, AsyncClient
 from src.adapters.mcp.server import create_mcp_server
 from src.dependencies import reset_dependencies
 from src.main import app
-from src.mcp_server.server import _vitals_store
+from src.vitals_state import _vitals_store
 from tests.e2e.factories import make_fhir_obs  # noqa: F401  (re-exported)
 
 

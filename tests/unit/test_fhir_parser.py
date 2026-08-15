@@ -1,14 +1,14 @@
 """Unit tests for the FHIR R4 Observation parser (baseline contract).
 
 These tests pin the *current* (baseline) parsing behavior of
-``src.ingestion.fhir_parser``. See docs/BASELINE.md §5.1 and §6 (legacy
+``src.core.ingestion.fhir_parser``. See docs/BASELINE.md §5.1 and §6 (legacy
 limitations): notably, AVPU consciousness is NOT in the LOINC map and units
 are NOT normalized/converted — both assertions below document that baseline.
 """
 
 import pytest
 
-from src.ingestion.fhir_parser import LOINC_CODES, parse_batch, parse_observation
+from src.core.ingestion.fhir_parser import LOINC_CODES, parse_batch, parse_observation
 
 pytestmark = pytest.mark.unit
 

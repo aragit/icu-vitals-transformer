@@ -1,9 +1,9 @@
 """Tests for deterioration index and severity classification."""
 
 
-from src.governance.deterioration import compute_deterioration_index
-from src.governance.severity import severity_from_score
-from src.models.vitals import VitalSignsWindow
+from src.core.domain.vitals import VitalSignsWindow
+from src.core.governance.deterioration import compute_deterioration_index
+from src.core.governance.severity import severity_from_score
 
 
 class TestDeteriorationIndex:

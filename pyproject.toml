@@ -33,22 +33,15 @@ target-version = "py312"
 select = ["E", "F", "W", "I"]
 
 # ---------------------------------------------------------------------------
-# Phase 0/1 baseline lock for ruff
+# Baseline ruff lock
 # ===========================================================================
-# E501 (line-too-long) and I001 (import-order) are ignored for *legacy* src
-# modules only (those outside src/core, src/ports, src/adapters) which carry
-# pre-existing violations and/or are thin strangler shims. New core, ports
-# and adapter code is held to the full 100-char + import-order rule set.
-# These ignores should be removed as legacy modules are retired.
+# E501 (line-too-long) and I001 (import-order) are ignored for the handful of
+# non-core modules (config, observability, main) that carry pre-existing
+# violations. New code in src/core, src/ports, src/adapters is held to the full
+# 100-char + import-order rule set.
 # ---------------------------------------------------------------------------
 [tool.ruff.lint.per-file-ignores]
-"src/api/**" = ["E501", "I001"]
 "src/config.py" = ["E501", "I001"]
-"src/forecasting/**" = ["E501", "I001"]
-"src/governance/**" = ["E501", "I001"]
-"src/ingestion/**" = ["E501", "I001"]
-"src/mcp_server/**" = ["E501", "I001"]
-"src/models/**" = ["E501", "I001"]
 "src/observability/**" = ["E501", "I001"]
 "src/main.py" = ["E501", "I001"]
 
@@ -59,23 +52,15 @@ ignore_missing_imports = true
 plugins = "pydantic.mypy"
 
 # ---------------------------------------------------------------------------
-# Phase 0/1 baseline lock for mypy
+# Baseline mypy lock
 # ===========================================================================
-# src/core, src/ports and src/adapters are type-checked strictly. The legacy
-# modules below carry pre-existing violations (untyped defs, bare generics,
-# operator narrowing, untyped decorators/calls, etc.) that cannot be cleaned
-# while the strangler shims remain. They are scoped out so `mypy src/` is
-# green; remove as legacy modules are retired.
+# src/core, src/ports and src/adapters are type-checked strictly. A small set
+# of pre-existing non-core modules (config, observability, main) carry legacy
+# violations scoped out so `mypy src/` is green.
 # ---------------------------------------------------------------------------
 [[tool.mypy.overrides]]
 module = [
-    "src.api.*",
     "src.config",
-    "src.forecasting.*",
-    "src.governance.*",
-    "src.ingestion.*",
-    "src.mcp_server.*",
-    "src.models.*",
     "src.observability.*",
     "src.main",
 ]

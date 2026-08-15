@@ -1,22 +1,24 @@
-"""Integration tests: full FastAPI request lifecycle (baseline contract).
+"""Integration tests: full v2 REST lifecycle (baseline contract).
 
-Exercise the end-to-end contract through ``fastapi.testclient.TestClient``:
-ingest → current → forecast → deterioration. These assert the public REST
-behavior documented in docs/BASELINE.md §2.
+Ingest -> current -> forecast -> deterioration, each scoped to an episode via
+``POST /v2/patients/{id}/episodes`` / ``POST /v2/vitals/ingest``. Asserts the
+public v2 REST behaviour documented in docs/BASELINE.md §2.
 """
 
 import pytest
 from fastapi.testclient import TestClient
 
+from src.dependencies import reset_dependencies
 from src.main import app
-from src.mcp_server.server import _vitals_store
+from src.vitals_state import _vitals_store
 
 pytestmark = pytest.mark.integration
 
 
 @pytest.fixture(autouse=True)
-def clear_store():
-    """Isolate each test from global in-memory state."""
+def clear_state():
+    """Isolate each test from global state."""
+    reset_dependencies()
     _vitals_store.clear()
     yield
     _vitals_store.clear()
@@ -25,7 +27,20 @@ def clear_store():
 client = TestClient(app)
 
 
-def _fhir_obs(loinc: str, value, patient_id: str = "PT-001", unit: str = "bpm",
+def _disclaimer() -> str:
+    from src.core.domain.disclaimer import CLINICAL_SAFETY_DISCLAIMER
+
+    return CLINICAL_SAFETY_DISCLAIMER
+
+
+def assert_meta(payload: dict) -> None:
+    meta = payload["_meta"]
+    assert meta["clinical_disclaimer"] == _disclaimer()
+    assert isinstance(meta["data_freshness_seconds"], int)
+    assert meta["data_freshness_seconds"] >= 0
+
+
+def _fhir_obs(loinc: str, value, patient_id="PT-001", unit="bpm",
               ts: str = "2026-07-02T08:00:30Z"):
     return {
         "resourceType": "Observation",
@@ -62,12 +77,19 @@ def _batch(rows, patient_id="PT-001", base_minute=0):
     for i, (loinc, value, unit) in enumerate(rows):
         ts = f"2026-07-02T08:{base_minute:02d}:{i:02d}Z"
         observations.append(_fhir_obs(loinc, value, patient_id, unit, ts))
-    return {"observations": observations}
+    return {"patient_id": patient_id, "observations": observations}
+
+
+def _ingest_then_episode(patient_id="PT-001", rows=None):
+    rows = rows or HEALTHY
+    resp = client.post("/v2/vitals/ingest", json=_batch(rows, patient_id))
+    assert resp.status_code == 200
+    return resp.json()["episode_id"]
 
 
 class TestIngestContract:
     def test_ingest_full_vitals(self):
-        resp = client.post("/vitals/ingest", json=_batch(HEALTHY))
+        resp = client.post("/v2/vitals/ingest", json=_batch(HEALTHY))
         assert resp.status_code == 200
         data = resp.json()
         assert data["patient_id"] == "PT-001"
@@ -75,85 +97,86 @@ class TestIngestContract:
         assert data["systolic_bp"] == 120.0
         assert data["spo2"] == 98.0
         assert data["temperature"] == 36.5
+        assert data["episode_id"] == "E-PT-001"
+        assert_meta(data)
 
     def test_ingest_empty_observations_returns_400(self):
-        resp = client.post("/vitals/ingest", json={"observations": []})
+        resp = client.post("/v2/vitals/ingest", json={"patient_id": "PT-001", "observations": []})
         assert resp.status_code == 400
 
     def test_ingest_invalid_observation_returns_400(self):
-        resp = client.post("/vitals/ingest", json={"observations": [{"resourceType": "Patient"}]})
+        resp = client.post(
+            "/v2/vitals/ingest",
+            json={"patient_id": "PT-001", "observations": [{"resourceType": "Patient"}]},
+        )
         assert resp.status_code == 400
 
 
 class TestCurrentVitalsContract:
     def test_current_after_ingest(self):
-        client.post("/vitals/ingest", json=_batch(HEALTHY))
-        resp = client.get("/vitals/current/PT-001")
+        eid = _ingest_then_episode()
+        resp = client.get(f"/v2/episodes/{eid}/current")
         assert resp.status_code == 200
         data = resp.json()
         assert data["patient_id"] == "PT-001"
         assert data["heart_rate"] == 72.0
+        assert data["episode_id"] == eid
+        assert_meta(data)
 
-    def test_current_unknown_patient_404(self):
-        resp = client.get("/vitals/current/PT-999")
+    def test_current_unknown_episode_404(self):
+        resp = client.get("/v2/episodes/E-MISSING/current")
         assert resp.status_code == 404
 
 
 class TestForecastContract:
-    def test_forecast_returns_three_horizons(self):
-        client.post("/vitals/ingest", json=_batch(HEALTHY))
-        resp = client.get("/vitals/forecast/PT-001")
+    def test_forecast_returned(self):
+        eid = _ingest_then_episode()
+        resp = client.get(f"/v2/episodes/{eid}/forecast", params={"horizon_minutes": 60})
         assert resp.status_code == 200
-        forecasts = resp.json()
-        assert len(forecasts) == 3
-        horizons = [f["horizon_minutes"] for f in forecasts]
-        assert horizons == [60, 240, 720]
-        assert all(f["severity"] == "NORMAL" for f in forecasts)
-        # Flat-line default: forecasted equals current for HR.
-        assert forecasts[0]["forecasted_vitals"]["heart_rate"] == 72.0
+        data = resp.json()
+        assert data["horizon_minutes"] == 60
+        assert "forecasted_vitals" in data
+        assert_meta(data)
 
-    def test_forecast_unknown_patient_404(self):
-        resp = client.get("/vitals/forecast/PT-999")
+    def test_forecast_unknown_episode_404(self):
+        resp = client.get("/v2/episodes/E-MISSING/forecast")
         assert resp.status_code == 404
 
 
 class TestDeteriorationContract:
     def test_deterioration_healthy(self):
-        client.post("/vitals/ingest", json=_batch(HEALTHY))
-        resp = client.get("/vitals/deterioration/PT-001")
+        eid = _ingest_then_episode()
+        resp = client.get(f"/v2/episodes/{eid}/deterioration")
         assert resp.status_code == 200
         data = resp.json()
         assert data["patient_id"] == "PT-001"
         assert data["severity"] == "NORMAL"
         assert 0 <= data["ensemble_score"] <= 20
+        assert_meta(data)
 
     def test_deterioration_critical(self):
-        client.post("/vitals/ingest", json=_batch(CRITICAL))
-        resp = client.get("/vitals/deterioration/PT-001")
+        eid = _ingest_then_episode(rows=CRITICAL)
+        resp = client.get(f"/v2/episodes/{eid}/deterioration")
         assert resp.status_code == 200
         data = resp.json()
         assert data["severity"] == "EMERGENCY"
         assert len(data["contributing_factors"]) > 0
+        assert_meta(data)
 
-    def test_deterioration_unknown_patient_404(self):
-        resp = client.get("/vitals/deterioration/PT-999")
+    def test_deterioration_unknown_episode_404(self):
+        resp = client.get("/v2/episodes/E-MISSING/deterioration")
         assert resp.status_code == 404
 
 
 class TestFullLifecycle:
     def test_ingest_current_forecast_deterioration(self):
-        # Full FastAPI TestClient lifecycle per the epic.
-        ingest = client.post("/vitals/ingest", json=_batch(HEALTHY))
-        assert ingest.status_code == 200
+        eid = _ingest_then_episode()
+        assert client.get(f"/v2/episodes/{eid}/current").status_code == 200
 
-        current = client.get("/vitals/current/PT-001")
-        assert current.status_code == 200
-        assert current.json()["heart_rate"] == 72.0
-
-        forecast = client.get("/vitals/forecast/PT-001")
+        forecast = client.get(f"/v2/episodes/{eid}/forecast", params={"horizon_minutes": 60})
         assert forecast.status_code == 200
-        assert len(forecast.json()) == 3
+        assert "forecasted_vitals" in forecast.json()
 
-        deterioration = client.get("/vitals/deterioration/PT-001")
-        assert deterioration.status_code == 200
-        assert deterioration.json()["severity"] == "NORMAL"
+        det = client.get(f"/v2/episodes/{eid}/deterioration")
+        assert det.status_code == 200
+        assert det.json()["severity"] == "NORMAL"

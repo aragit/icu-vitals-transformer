@@ -1,106 +1,119 @@
-"""Tests for MCP server tools."""
+"""Tests for MCP server tool execution (v2 baseline).
+
+Exercises the FastMCP server produced by ``src.adapters.mcp.server`` via
+``call_tool`` against the v2 episode-keyed tool surface (ingest_vitals ->
+get_forecast / get_deterioration_index by episode_id), per docs/BASELINE.md §3.
+"""
 
 import json
 
 import pytest
 
-from src.mcp_server.server import (
-    _handle_deterioration,
-    _handle_forecast,
-    _handle_ingest,
-    _vitals_store,
-)
+from src.adapters.mcp.server import create_mcp_server
+from src.dependencies import reset_dependencies
+from src.vitals_state import _vitals_store
 
 
-@pytest.fixture(autouse=True)
-def clear_store():
-    """Clear in-memory store before each test."""
+@pytest.fixture
+def mcp_server():
+    reset_dependencies()
     _vitals_store.clear()
-    yield
+    return create_mcp_server()
 
 
-def make_fhir_obs(loinc: str, value: float, patient_id: str = "PT-001"):
-    """Helper to build FHIR Observation."""
+def _text(result) -> dict:
+    """Extract the JSON payload from a FastMCP ``call_tool`` result.
+
+    FastMCP returns a ``(blocks, structured)`` pair (or just blocks); we prefer
+    the structured mapping when present, otherwise fall back to the first
+    ``text`` content block.
+    """
+    if isinstance(result, tuple):
+        blocks, structured = result
+        if isinstance(structured, dict):
+            return structured
+        result = blocks
+    blocks = result if isinstance(result, list) else [result]
+    text = next(b.text for b in blocks if getattr(b, "type", None) == "text")
+    return json.loads(text)
+
+
+def _obs(patient_id: str, hr: float, loinc: str = "8867-4", unit: str = "bpm",
+         ts: str = "2026-07-02T08:00:00Z"):
     return {
         "resourceType": "Observation",
         "subject": {"reference": f"Patient/{patient_id}"},
-        "code": {
-            "coding": [
-                {"system": "http://loinc.org", "code": loinc, "display": "Test"}
-            ]
-        },
-        "valueQuantity": {"value": value, "unit": "bpm"},
-        "effectiveDateTime": "2026-07-02T08:00:00Z",
+        "code": {"coding": [{"system": "http://loinc.org", "code": loinc, "display": "Test"}]},
+        "valueQuantity": {"value": hr, "unit": unit},
+        "effectiveDateTime": ts,
     }
 
 
+CRITICAL = [
+    ("8867-4", 140.0),  # HR critical
+    ("8480-6", 80.0),   # SBP low
+    ("2708-6", 88.0),   # SpO2 severe
+    ("9279-1", 28.0),   # RR critical
+]
+
+
 @pytest.mark.asyncio
-async def test_ingest_single_observation():
-    obs = make_fhir_obs("8867-4", 72.0)
-    result = await _handle_ingest({"patient_id": "PT-001", "observations": [obs]})
-    assert len(result) == 1
-    data = json.loads(result[0].text)
+async def test_ingest_single_observation(mcp_server):
+    result = await mcp_server.call_tool(
+        "ingest_vitals", {"patient_id": "PT-001", "observations": [_obs("PT-001", 72.0)]}
+    )
+    data = _text(result)
     assert data["patient_id"] == "PT-001"
     assert data["heart_rate"] == 72.0
+    assert data["episode_id"] == "E-PT-001"
+    assert "_meta" in data
 
 
 @pytest.mark.asyncio
-async def test_ingest_invalid_observation():
-    obs = {"resourceType": "Patient"}
-    result = await _handle_ingest({"patient_id": "PT-001", "observations": [obs]})
-    data = json.loads(result[0].text)
-    assert "error" in data
+async def test_forecast_after_ingest(mcp_server):
+    await mcp_server.call_tool(
+        "ingest_vitals", {"patient_id": "PT-002", "observations": [_obs("PT-002", 72.0)]}
+    )
+    result = await mcp_server.call_tool(
+        "get_forecast", {"episode_id": "E-PT-002", "horizon_minutes": 60}
+    )
+    payload = _text(result)
+    assert "forecasted_vitals" in payload
+    assert "data_freshness_seconds" in payload
+    assert "_meta" in payload
 
 
 @pytest.mark.asyncio
-async def test_ingest_empty():
-    result = await _handle_ingest({"patient_id": "PT-001", "observations": []})
-    data = json.loads(result[0].text)
-    assert "error" in data
-
-
-@pytest.mark.asyncio
-async def test_forecast_after_ingest():
-    obs = make_fhir_obs("8867-4", 72.0)
-    await _handle_ingest({"patient_id": "PT-001", "observations": [obs]})
-
-    result = await _handle_forecast({"patient_id": "PT-001", "horizon_minutes": 60})
-    data = json.loads(result[0].text)
-    assert data["patient_id"] == "PT-001"
-    assert data["horizon_minutes"] == 60
-    assert "severity" in data
-
-
-@pytest.mark.asyncio
-async def test_forecast_no_data():
-    result = await _handle_forecast({"patient_id": "PT-999", "horizon_minutes": 60})
-    data = json.loads(result[0].text)
-    assert "error" in data
-
-
-@pytest.mark.asyncio
-async def test_deterioration_normal():
-    obs = make_fhir_obs("8867-4", 72.0)
-    await _handle_ingest({"patient_id": "PT-001", "observations": [obs]})
-
-    result = await _handle_deterioration({"patient_id": "PT-001"})
-    data = json.loads(result[0].text)
-    assert data["patient_id"] == "PT-001"
+async def test_deterioration_normal(mcp_server):
+    await mcp_server.call_tool(
+        "ingest_vitals", {"patient_id": "PT-003", "observations": [_obs("PT-003", 72.0)]}
+    )
+    result = await mcp_server.call_tool("get_deterioration_index", {"episode_id": "E-PT-003"})
+    data = _text(result)
+    assert data["episode_id"] == "E-PT-003"
     assert data["severity"] == "NORMAL"
+    assert data["ensemble_score"] == 0.0
+    assert isinstance(data["contributing_factors"], list)
 
 
 @pytest.mark.asyncio
-async def test_deterioration_emergency():
-    obs_list = [
-        make_fhir_obs("8867-4", 140.0, "PT-002"),   # HR critical
-        make_fhir_obs("8480-6", 80.0, "PT-002"),    # SBP low
-        make_fhir_obs("2708-6", 88.0, "PT-002"),    # SpO2 severe
-        make_fhir_obs("9279-1", 28.0, "PT-002"),    # RR critical
-    ]
-    await _handle_ingest({"patient_id": "PT-002", "observations": obs_list})
-
-    result = await _handle_deterioration({"patient_id": "PT-002"})
-    data = json.loads(result[0].text)
-    assert data["patient_id"] == "PT-002"
+async def test_deterioration_emergency(mcp_server):
+    observations = [_obs("PT-004", value, loinc=loinc) for loinc, value in CRITICAL]
+    await mcp_server.call_tool(
+        "ingest_vitals", {"patient_id": "PT-004", "observations": observations}
+    )
+    result = await mcp_server.call_tool("get_deterioration_index", {"episode_id": "E-PT-004"})
+    data = _text(result)
+    assert data["episode_id"] == "E-PT-004"
     assert data["severity"] == "EMERGENCY"
     assert len(data["contributing_factors"]) > 0
+
+
+@pytest.mark.asyncio
+async def test_discover_episode_after_ingest(mcp_server):
+    await mcp_server.call_tool(
+        "ingest_vitals", {"patient_id": "PT-005", "observations": [_obs("PT-005", 72.0)]}
+    )
+    result = await mcp_server.call_tool("discover_episode", {"patient_id": "PT-005"})
+    data = _text(result)
+    assert data["episode_id"] == "E-PT-005"

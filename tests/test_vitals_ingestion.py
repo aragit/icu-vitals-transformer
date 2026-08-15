@@ -3,8 +3,8 @@
 
 import pytest
 
-from src.ingestion.fhir_parser import LOINC_CODES, parse_batch, parse_observation
-from src.ingestion.windowing import window_vitals
+from src.core.ingestion.fhir_parser import LOINC_CODES, parse_batch, parse_observation
+from src.core.windowing.engine import window_vitals
 
 
 def make_observation(loinc: str, value: float, patient_id: str = "PT-001"):
@@ -69,19 +69,19 @@ class TestWindowing:
             {"patient_id": "PT-001", "vital_type": "systolic_bp", "value": 120,
              "timestamp": "2026-07-02T08:01:00Z"},
         ]
-        window = window_vitals(records, "PT-001", window_minutes=5)
+        window = window_vitals(records, "PT-001", window_minutes=5, anchor="oldest")
         assert window is not None
         assert window.patient_id == "PT-001"
         assert window.heart_rate == 72.0  # mean of 70, 74
         assert window.systolic_bp == 120.0
 
     def test_window_vitals_empty(self):
-        assert window_vitals([], "PT-001") is None
+        assert window_vitals([], "PT-001", anchor="oldest") is None
 
     def test_window_vitals_wrong_patient(self):
         records = [{"patient_id": "PT-002", "vital_type": "heart_rate", "value": 70,
                     "timestamp": "2026-07-02T08:00:00Z"}]
-        assert window_vitals(records, "PT-001") is None
+        assert window_vitals(records, "PT-001", anchor="oldest") is None
 
     def test_window_vitals_outside_window(self):
         records = [
@@ -90,7 +90,7 @@ class TestWindowing:
             {"patient_id": "PT-001", "vital_type": "heart_rate", "value": 80,
              "timestamp": "2026-07-02T08:10:00Z"},  # outside 5min window
         ]
-        window = window_vitals(records, "PT-001", window_minutes=5)
+        window = window_vitals(records, "PT-001", window_minutes=5, anchor="oldest")
         assert window.heart_rate == 70.0  # only first record in window
 
     def test_window_vitals_non_numeric_skipped(self):
@@ -100,5 +100,5 @@ class TestWindowing:
             {"patient_id": "PT-001", "vital_type": "heart_rate", "value": 80,
              "timestamp": "2026-07-02T08:01:00Z"},
         ]
-        window = window_vitals(records, "PT-001", window_minutes=5)
+        window = window_vitals(records, "PT-001", window_minutes=5, anchor="oldest")
         assert window.heart_rate == 80.0
