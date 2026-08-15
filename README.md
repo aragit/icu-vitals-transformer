@@ -1,4 +1,4 @@
-<h1 align="center">🏥 ICU Vitals Transformer</h1>
+<h1 align="center">ICU Vitals Transformer</h1>
 <p align="center">
   <b>Hexagonal Skill Engine — Deterministic Clinical Forecasting via MCP & A2A</b>
 </p>
@@ -18,11 +18,22 @@
   <a href="#"><img src="https://img.shields.io/badge/License-MIT-green" alt="MIT"></a>
 </p>
 
-FHIR R4 vital sign ingestion → deterministic multi-horizon trend extrapolation → DDS (Deterministic Deterioration Score) severity classification, exposed as composable MCP and A2A skill surfaces. Every forecast passes through a SafetyShell invariant gate that clamps physiological bounds, surfaces stale-data warnings, and fails closed.
+<p align="center">
+  <b>A Reference Architecture for Safety-First Clinical AI Skills</b>
+</p>
 
 <p align="center">
   <img src="assets/arch.png" alt="Architecture Diagram" width="800" />
 </p>
+
+Most clinical AI demos are black-box neural nets wrapped in disclaimers. This is the opposite: a deterministic, symbolic clinical skill that forecasts patient deterioration from FHIR R4 vitals using nothing more than linear trend extrapolation — fully explainable, fully testable, and fully bounded by a SafetyShell invariant gate.
+It is designed as a reference implementation for how to build high-integrity AI tools using the Model Context Protocol (MCP). The architecture is protocol-native, not protocol-adapted: the clinical logic lives in a pure-Python hexagonal core with zero framework dependencies, while MCP, REST, and A2A surfaces are thin, swappable adapters.
+What you get:
+Deterministic forecasts — same input always produces same output; no model drift, no versioning hell
+SafetyShell guarantees — every output is clamped to physiological bounds, checked for data staleness, and fails closed to a flat-line projection
+Protocol-native composability — drop this into any MCP host or A2A swarm as a skill, not a service
+Zero GPU / zero ML — runs on CPU with predictable latency; no PyTorch, no transformers, no prompt engineering
+Who this is for: AI engineers building clinical agent architectures (e.g., AXIOMIS, SentriXIA) who need a trustworthy, deterministic baseline they can compose, extend, and audit — not a magic box they have to trust.
 
 ---
 
