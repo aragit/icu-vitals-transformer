@@ -20,6 +20,10 @@
 
 FHIR R4 vital sign ingestion → deterministic multi-horizon trend extrapolation → DDS (Deterministic Deterioration Score) severity classification, exposed as composable MCP and A2A skill surfaces. Every forecast passes through a SafetyShell invariant gate that clamps physiological bounds, surfaces stale-data warnings, and fails closed.
 
+<p align="center">
+  <img src="assets/arch.png" alt="Architecture Diagram" width="800" />
+</p>
+
 ---
 
 ## 📋 Table of Contents
