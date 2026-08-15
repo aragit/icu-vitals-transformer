@@ -60,8 +60,9 @@ Frozen the v0.1.0 behavior as the regression anchor:
 - **Discovery:** `GET /discover` + `src/adapters/mcp/discovery.discover_capabilities()`.
 - **Transport:** `MCP_TRANSPORT=http|stdio` selecting Streamable HTTP (prod) or
   stdio (dev).
-- **MRTR:** `src/adapters/mcp/mrtr.py` mid-flight disambiguation for ambiguous
-  episodes.
+- **Episode disambiguation:** `discover_episode` returns an `episodes` array
+  for patients with multiple active episodes (resolves directly when an
+  explicit `episode_id` is supplied).
 - **Auth:** `src/auth/cimd.py` CIMD/JWT principal extraction; middleware binds
   `requested_by` into logging context.
 - **Storage:** `src/adapters/storage/redis.py` multi-replica backend, selected
@@ -71,15 +72,16 @@ Frozen the v0.1.0 behavior as the regression anchor:
 
 ## Cutover Notes
 
-- v1 routes and `_vitals_store` remain for backward compatibility, now marked
-  with `Deprecation: true` + `Link: </v2/vitals/ingest>; rel="alternate"`.
+- v1 routes were removed in v0.9.1 (Deviation A); `_vitals_store` remains as the
+  default in-process backend, with `src.dependencies.get_vitals_repo()` selecting a
+  network backend when configured.
 - The v2 and MCP surfaces share a single `ClinicalAssessmentService` hex-core
   singleton; migration is a transport-layer switch, not a logic rewrite.
-- **Target:** 240+ tests green, `mypy src/` clean, `ruff` clean, ≥ 92 % coverage.
+- **Target:** 240+ tests green, `mypy src/ --strict` clean, `ruff` clean, ≥ 92 % coverage.
 
 ## Phase 6 — Production Hardening (post-migration)
 
 - Multi-replica Redis storage selected via `REPOSITORY_BACKEND=redis` with safe
   in-memory fallback.
-- MRTR disambiguation for ambiguous episode resolution.
+- Multi-episode disambiguation surfaced as a data array via `discover_episode`.
 - CIMD/JWT bearer-token principal extraction bound into the logging context.

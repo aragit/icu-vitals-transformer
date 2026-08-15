@@ -170,7 +170,7 @@ class ClinicalAssessmentService:
 
         assessment = DeteriorationAssessment(
             patient_id=episode.patient_id,
-            ensemble_score=round(min(score, 20.0), 2),
+            dds_score=round(min(score, 20.0), 2),
             severity=severity,
             contributing_factors=factors,
         )
@@ -184,7 +184,7 @@ class ClinicalAssessmentService:
         logger.info(
             "Episode %s assessed: DDS=%s severity=%s",
             episode_id,
-            assessment.ensemble_score,
+            assessment.dds_score,
             assessment.severity,
         )
         return assessment

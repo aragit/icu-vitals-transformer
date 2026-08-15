@@ -154,7 +154,7 @@ default 60).
 DDS index, severity tier and contributing factors for an episode's latest
 window.
 - 404 if the episode/vitals are unknown.
-- Response `200` → `DeteriorationAssessment` JSON (`ensemble_score`, `severity`,
+- Response `200` → `DeteriorationAssessment` JSON (`dds_score`, `severity`,
   `contributing_factors`) + `episode_id` + `_meta`.
 
 ### `GET /v2/episodes/{episode_id}/discovery`
@@ -194,17 +194,19 @@ Defined in `src/adapters/mcp/tools.py`, registered onto a `FastMCP` instance by
 ### `get_deterioration_index`
 - Input: `{ episode_id: str }`.
 - Behavior: run `get_forecast`, then `compute_dds`; returns
-  `DeteriorationAssessment` (`ensemble_score`, `severity`,
+  `DeteriorationAssessment` (`dds_score`, `severity`,
   `contributing_factors`) + `episode_id` + `_meta`.
 
 ### `discover_episode`
-- Input: `{ patient_id: str }`.
-- Behavior: returns the active episode, or an MRTR disambiguation payload when
-  multiple active episodes exist.
+- Input: `{ patient_id: str, episode_id?: str }`.
+- Behavior: with an explicit `episode_id`, resolves that episode; otherwise
+  returns the single active episode, or an `episodes` array listing all active
+  episodes when multiple exist, or `episode_id: null` when none exist.
 
 ### `discover_capabilities`
 - Input: `{}`.
-- Behavior: returns the server capability matrix (tools, resources, safety bounds).
+- Behavior: returns the server capability matrix (tools, safety bounds, LOINC
+  mapping, numeric fields).
 
 ### Transport entry point
 `src/adapters/mcp/server.run_mcp_server` selects `MCP_TRANSPORT` (`http` →
@@ -244,12 +246,13 @@ data_freshness_seconds: int
 ### `DeteriorationAssessment` (`src/core/domain/forecast.py`)
 ```
 patient_id: str
-ensemble_score: float  [0..20]
+dds_score: float  [0..20]
 severity: str   ^(NORMAL|WARNING|ALERT|EMERGENCY)$
 contributing_factors: list[str]
 ```
-(`ensemble_score` is the DDS score clipped to [0,20]; there is no weighted
-multi-horizon ensemble in v2.)
+(`dds_score` is the DDS score clipped to [0,20]; v2 runs a single
+deterministic forecast and classifies via DDS — there is no weighted
+multi-horizon scoring pass in v2.)
 
 ### `_meta` envelope (all v2 REST/MCP responses)
 ```
@@ -318,7 +321,7 @@ multi-horizon ensemble in v2.)
 - `ClinicalAssessmentService.assess_episode` runs a single-horizon forecast
   (`forecast_episode`, default 60 min) then classifies via DDS:
   `compute_dds(forecast.forecasted_vitals)` → `(score, factors)`,
-  `severity_from_score(score)`, `ensemble_score = round(min(score, 20.0), 2)`.
+  `severity_from_score(score)`, `dds_score = round(min(score, 20.0), 2)`.
 - (The legacy multi-horizon weighted ensemble — `ensemble_forecast` /
   `ensemble_deterioration_index` / `HORIZON_WEIGHTS` — was retired in v0.9.1;
   v2 scores a single trend-anchored forecast. See §9.)

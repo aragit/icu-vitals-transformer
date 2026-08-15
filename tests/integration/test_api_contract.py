@@ -152,7 +152,7 @@ class TestDeteriorationContract:
         data = resp.json()
         assert data["patient_id"] == "PT-001"
         assert data["severity"] == "NORMAL"
-        assert 0 <= data["ensemble_score"] <= 20
+        assert 0 <= data["dds_score"] <= 20
         assert_meta(data)
 
     def test_deterioration_critical(self):

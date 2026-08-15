@@ -116,7 +116,7 @@ async def test_deterioration_index_returns_meta(mcp_server):
         "get_deterioration_index", {"episode_id": episode_id}
     )
     payload = _text(result)
-    assert "ensemble_score" in payload
+    assert "dds_score" in payload
     _meta = payload["_meta"]
     assert _meta["clinical_disclaimer"]
     assert "data_freshness_seconds" in _meta

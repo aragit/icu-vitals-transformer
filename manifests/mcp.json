@@ -69,7 +69,7 @@
       },
       {
         "name": "discover_episode",
-        "description": "Discover the currently-active episode and state for a patient. Prompts with MRTR disambiguation when multiple active episodes exist.",
+        "description": "Discover the active episode for a patient. Returns the single active episode, an episodes array when multiple are active, or episode_id null when none exist.",
         "inputSchema": {
           "type": "object",
           "properties": {"patient_id": {"type": "string"}},

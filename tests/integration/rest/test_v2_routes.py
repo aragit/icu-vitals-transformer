@@ -169,7 +169,7 @@ async def test_deterioration_v2():
         response = await client.get(f"/v2/episodes/{episode_id}/deterioration")
     assert response.status_code == 200
     data = response.json()
-    assert "ensemble_score" in data
+    assert "dds_score" in data
     assert data["episode_id"] == episode_id
     assert_meta(data)
 

@@ -78,7 +78,7 @@ class TestAssessEpisode:
         episode = await svc._episodes.create("PT-001")
 
         assessment = await svc.assess_episode(episode.episode_id, 60)
-        assert assessment.ensemble_score == 0.0
+        assert assessment.dds_score == 0.0
         assert assessment.severity == "NORMAL"
 
         transitioned = await svc._episodes.get(episode.episode_id)
@@ -99,7 +99,7 @@ class TestAssessEpisode:
         episode = await svc._episodes.create("PT-001")
 
         assessment = await svc.assess_episode(episode.episode_id, 60)
-        assert assessment.ensemble_score == 3.0
+        assert assessment.dds_score == 3.0
         assert assessment.severity == "WARNING"
         assert "heart_rate_critical" in assessment.contributing_factors
 

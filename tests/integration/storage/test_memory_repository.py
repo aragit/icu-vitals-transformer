@@ -62,7 +62,7 @@ class TestAvailableVitals:
         # artifact (not a vital type) must NOT overwrite available_vitals.
         assessment = DeteriorationAssessment(
             patient_id="PT-001",
-            ensemble_score=5.0,
+            dds_score=5.0,
             severity="ALERT",
             contributing_factors=["respiratory_rate_critical"],
         )

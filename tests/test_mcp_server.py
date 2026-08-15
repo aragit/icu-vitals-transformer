@@ -97,7 +97,7 @@ async def test_deterioration_normal(mcp_server):
     data = _text(result)
     assert data["episode_id"].startswith("E-")
     assert data["severity"] == "NORMAL"
-    assert data["ensemble_score"] == 0.0
+    assert data["dds_score"] == 0.0
     assert isinstance(data["contributing_factors"], list)
 
 

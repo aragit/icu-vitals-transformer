@@ -11,9 +11,8 @@ Episode IDs were generated as `E-{patient_id}` in both
 `InMemoryEpisodeRepository` and `RedisEpisodeRepository`. This deterministic
 format (locked in v0.2.0) assumed a single active episode per patient and
 collided whenever a second episode was created for the same patient — the
-second `create()` overwrote the active index and the MRTR disambiguation
-logic (`src/adapters/mcp.mrtr`) was effectively dead code for the default
-backend.
+second `create()` overwrote the active index, so resolving multiple active
+episodes was effectively dead code for the default backend.
 
 ## Decision (v0.9.1)
 Generate episode IDs as `E-{uuid.uuid4().hex[:12]}` at `create()` time in
@@ -24,7 +23,7 @@ both repositories:
 This makes the format `E-<12-hex-char-uuid>`. Both repositories now key their
 active-patient index on a **set** of episode IDs (`dict[str, set[str]]` in
 memory, `SADD`/`SMEMBERS` in Redis), so multiple concurrent episodes per
-patient are tracked and the MRTR disambiguation surface
+patient are tracked and multi-episode disambiguation
 (`discover_episode` / `get_all_active_by_patient`) is reachable.
 
 `get_active_by_patient()` returns the most recent active episode deterministically
@@ -35,8 +34,8 @@ response.
 
 ## Consequences
 - **Positive**: Multiple active episodes per patient are now supported; the
-  active-patient index no longer collides; MRTR disambiguation is reachable
-  in the default backend; ID generation is collision-free.
+  active-patient index no longer collides; multi-episode disambiguation is
+  reachable in the default backend; ID generation is collision-free.
 - **Negative**: Episode IDs are no longer human-guessable from the patient id;
   log correlation must use `patient_id` + `episode_id` rather than inferring one
   from the other.

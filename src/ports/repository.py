@@ -51,7 +51,7 @@ class EpisodeRepository(Protocol):
         ...
 
     async def get_all_active_by_patient(self, patient_id: str) -> list[Episode]:
-        """All active episodes for a patient (supports MRTR disambiguation)."""
+        """All active episodes for a patient (supports multi-episode lookup)."""
         ...
 
     async def transition(

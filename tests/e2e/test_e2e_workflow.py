@@ -68,7 +68,7 @@ async def test_rest_v2_full_lifecycle(httpx_client):
     assert r.status_code == 200
     assessment = r.json()
     _check_meta(assessment)
-    assert "ensemble_score" in assessment
+    assert "dds_score" in assessment
     assert assessment["episode_id"] == episode_id
 
     r = await httpx_client.get(f"{_BASE}/v2/episodes/{episode_id}/discovery")
@@ -104,7 +104,7 @@ async def test_mcp_full_lifecycle(mcp_server):
     )
     assessment = _mcp_payload(assessment)
     _check_meta(assessment)
-    assert "ensemble_score" in assessment
+    assert "dds_score" in assessment
 
     discovery = await mcp_server.call_tool("discover_episode", {"patient_id": "PT-E2E"})
     discovery = _mcp_payload(discovery)

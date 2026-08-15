@@ -87,7 +87,7 @@ class SafetyShell(ForecastBackend):
         Returns a deep-copied ``ForecastResult`` with projected vitals clamped
         to physiological bounds, lower/upper ordering enforced, and stale-data
         warnings attached. The input ``result`` is left untouched so upstream
-        callers (e.g. the ensemble) can still read the raw, unclamped projection.
+        callers (e.g. the forecast pipeline) can still read the raw, unclamped projection.
         """
         forecasted = _clamp_window(result.forecasted_vitals)
         lower = _clamp_window(result.uncertainty_lower)

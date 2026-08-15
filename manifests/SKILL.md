@@ -27,8 +27,9 @@ values never exceed safe bounds.
 | Severity / risk tier is needed | Call `get_deterioration_index`; it records the episode state transition. |
 
 When `episode_id` is omitted and more than one active episode exists for the
-patient, the server returns a structured **MRTR** (Mid-Flight Request To Re-ask)
-payload prompting disambiguation — it never guesses silently.
+patient, the server returns an `episodes` array listing every active episode
+(with `episode_id`, `state`, `created_at`) so the caller can select one — it
+never guesses silently.
 
 ## DDS Risk Tier Interpretations
 

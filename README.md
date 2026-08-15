@@ -240,7 +240,7 @@ The server exposes tools via the Model Context Protocol:
 |------|-------------|
 | `ingest_vitals` | Accepts FHIR R4 Observation dicts, returns windowed vital signs + episode ID |
 | `get_forecast` | Returns multi-horizon forecast (default 1h; accepts `horizon_minutes`) |
-| `get_deterioration_index` | Computes ensemble DDS with severity classification |
+| `get_deterioration_index` | Computes DDS score with severity classification |
 | `discover_episode` | Resolves the active episode(s) for a patient |
 | `discover_capabilities` | Returns the server capability matrix (tools, resources, safety bounds) |
 
@@ -279,7 +279,7 @@ All metrics are label-free to prevent high-cardinality issues with patient ident
 | `forecasts_generated_total` | Counter | Total forecasts generated |
 | `assessments_total` | Counter | Total DDS assessments computed |
 | `forecast_latency_seconds` | Histogram | Per-horizon forecast latency |
-| `forecast_duration_seconds` | Histogram | Ensemble forecast service latency |
+| `forecast_duration_seconds` | Histogram | Forecast service latency |
 | `ingest_duration_seconds` | Histogram | Ingest + windowing service latency |
 | `trend_computation_latency_seconds` | Histogram | Least-squares trend computation latency |
 | `safety_shell_fallback_total` | Counter | SafetyShell exception fallbacks |

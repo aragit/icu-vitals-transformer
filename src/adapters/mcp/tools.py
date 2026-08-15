@@ -12,7 +12,6 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 from src.adapters.mcp.discovery import discover_capabilities as _discover_capabilities
-from src.adapters.mcp.mrtr import resolve_single_episode
 from src.adapters.rest.metadata import build_meta, freshness_seconds
 from src.core.services.clinical_assessment import ClinicalAssessmentService
 from src.dependencies import get_clinical_service
@@ -83,33 +82,72 @@ def register_tools(server: FastMCP) -> None:
         }
 
     @server.tool()
-    async def discover_episode(patient_id: str) -> dict[str, Any]:
-        """Discover the currently-active episode(s) for a patient.
+    async def discover_episode(
+        patient_id: str,
+        episode_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Return the active episode for a patient, or all candidates if ambiguous.
 
         Args:
             patient_id: Canonical identifier of the patient.
+            episode_id: Optional explicit episode to resolve.
 
-        Returns the active episode, or a structured ``mrtr`` disambiguation
-        payload when multiple active episodes exist and no ``episode_id`` was
-        supplied.
+        When ``episode_id`` is supplied it is resolved directly. Otherwise, if
+        exactly one active episode exists it is returned; if multiple active
+        episodes exist an ``episodes`` array is returned so the caller can pick;
+        if none exist ``episode_id`` is ``None``.
         """
         MCP_TOOL_CALLS.inc()
         svc = service()
+
+        # If episode_id is explicitly provided, resolve it directly
+        if episode_id:
+            episode = await svc.get_episode(episode_id)
+            if episode is None or episode.patient_id != patient_id:
+                raise ValueError(f"Episode {episode_id} not found for patient {patient_id}")
+            return {
+                "patient_id": patient_id,
+                "episode_id": episode.episode_id,
+                "state": episode.state.value,
+                "_meta": build_meta(0),
+            }
+
         candidates = await svc._episodes.get_all_active_by_patient(patient_id)
-        mrtr = resolve_single_episode(patient_id, candidates, None)
-        if mrtr is not None:
-            return mrtr
-        episode = candidates[0] if candidates else None
+
+        if not candidates:
+            return {
+                "patient_id": patient_id,
+                "episode_id": None,
+                "state": None,
+                "_meta": build_meta(0),
+            }
+
+        if len(candidates) == 1:
+            episode = candidates[0]
+            return {
+                "patient_id": patient_id,
+                "episode_id": episode.episode_id,
+                "state": episode.state.value,
+                "_meta": build_meta(0),
+            }
+
+        # Multiple active episodes — return structured data, not a conversation prompt
         return {
             "patient_id": patient_id,
-            "episode_id": episode.episode_id if episode is not None else None,
-            "state": episode.state.value if episode is not None else None,
+            "episodes": [
+                {
+                    "episode_id": ep.episode_id,
+                    "state": ep.state.value,
+                    "created_at": ep.created_at.isoformat(),
+                }
+                for ep in candidates
+            ],
             "_meta": build_meta(0),
         }
 
     @server.tool()
     async def discover_capabilities() -> dict[str, Any]:
-        """Return the server capability matrix (tools, resources, safety bounds)."""
+        """Return the server capability matrix (tools, safety bounds)."""
         MCP_TOOL_CALLS.inc()
         caps = _discover_capabilities()
         return {

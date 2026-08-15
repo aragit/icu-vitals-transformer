@@ -54,16 +54,19 @@ downstream clients cannot misinterpret a zero vital as a valid projection.
 ## 4. DDS Range Guarantee
 
 `compute_dds` returns `0 ≤ score ≤ 20` (`DDS_MAX_SCORE`). `assess_episode`
-further clamps the exposed `ensemble_score` to `min(score, 20.0)`. Severity
-tiers (`src/core/domain/episode.py::EpisodeState`):
+further clamps the exposed `dds_score` to `min(score, 20.0)`. Severity
+tiers (`src/core/governance/severity.py::severity_from_score`, mirrored on
+`src/core/domain/episode.py::EpisodeState`):
 
 | Tier | DDS range |
 |------|-----------|
-| NORMAL | 0–5 |
-| WARNING | 6–10 |
-| ALERT | 11–14 |
-| EMERGENCY | 15–20 |
-| CRITICAL | > 20 (post-refactor ceiling; surfaced as the risk ceiling) |
+| NORMAL | 0–2 |
+| WARNING | 3–4 |
+| ALERT | 5–6 |
+| EMERGENCY | ≥7 |
+
+`CRITICAL` is not an automated DDS tier — it is reserved for a future manual
+clinician override and is never emitted by `severity_from_score`.
 
 ## 5. Fail-Closed Fallback
 

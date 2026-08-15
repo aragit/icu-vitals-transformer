@@ -149,7 +149,7 @@ class TestRedisEpisodeRepository:
         repo = RedisEpisodeRepository(client=redis)
         assessment = DeteriorationAssessment(
             patient_id="PT-001",
-            ensemble_score=18.0,
+            dds_score=18.0,
             severity="EMERGENCY",
             contributing_factors=["heart_rate_elevated"],
         )
@@ -172,7 +172,7 @@ class TestRedisEpisodeRepository:
         repo = RedisEpisodeRepository(client=redis)
         assessment = DeteriorationAssessment(
             patient_id="PT-001",
-            ensemble_score=5.0,
+            dds_score=5.0,
             severity="WARNING",
             contributing_factors=["resp_elevated"],
         )
@@ -202,7 +202,7 @@ class TestRedisEpisodeRepository:
         repo = RedisEpisodeRepository(client=redis)
         assessment = DeteriorationAssessment(
             patient_id="PT-001",
-            ensemble_score=0.0,
+            dds_score=0.0,
             severity="NORMAL",
             contributing_factors=set(),
         )
@@ -243,7 +243,7 @@ class TestRedisEpisodeRepository:
         repo = RedisEpisodeRepository(client=redis)
         assessment = DeteriorationAssessment(
             patient_id="PT-001",
-            ensemble_score=18.0,
+            dds_score=18.0,
             severity="EMERGENCY",
             contributing_factors=["heart_rate_critical"],
         )
@@ -256,7 +256,7 @@ class TestRedisAssessmentRepository:
     async def test_append_and_retrieve_audit_trail(self) -> None:
         entries = [
             DeteriorationAssessment(
-                patient_id="PT-001", ensemble_score=float(i), severity="NORMAL"
+                patient_id="PT-001", dds_score=float(i), severity="NORMAL"
             ).model_dump_json()
             for i in range(2)
         ]
@@ -266,13 +266,13 @@ class TestRedisAssessmentRepository:
             await repo.append_assessment(
                 "E-1",
                 DeteriorationAssessment(
-                    patient_id="PT-001", ensemble_score=float(i), severity="NORMAL"
+                    patient_id="PT-001", dds_score=float(i), severity="NORMAL"
                 ),
             )
         redis.ltrim.assert_awaited()
         trail = await repo.get_audit_trail("E-1")
         assert len(trail) == 2
-        assert trail[0].ensemble_score == 0.0
+        assert trail[0].dds_score == 0.0
 
     async def test_get_audit_trail_empty(self) -> None:
         redis = _mock_redis(lrange=AsyncMock(return_value=[]))

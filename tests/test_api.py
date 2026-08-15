@@ -161,7 +161,7 @@ async def test_get_deterioration():
     assert response.status_code == 200
     data = response.json()
     assert data["severity"] == "EMERGENCY"
-    assert "ensemble_score" in data
+    assert "dds_score" in data
     assert len(data["contributing_factors"]) > 0
     assert_meta(data)
 

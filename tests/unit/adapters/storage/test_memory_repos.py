@@ -82,7 +82,7 @@ class TestEpisodeRepository:
         ep = await repo.create("PT-001")
         assessment = DeteriorationAssessment(
             patient_id="PT-001",
-            ensemble_score=5.0,
+            dds_score=5.0,
             severity="ALERT",
             contributing_factors=["heart_rate_elevated"],
         )
@@ -91,7 +91,7 @@ class TestEpisodeRepository:
         # EMERGENCY transitions clear the active-patient index.
         alert_assessment = DeteriorationAssessment(
             patient_id="PT-001",
-            ensemble_score=9.0,
+            dds_score=9.0,
             severity="EMERGENCY",
             contributing_factors=["heart_rate_critical"],
         )
@@ -110,7 +110,7 @@ class TestEpisodeRepository:
         ep = await repo.create("PT-001")
         assessment = DeteriorationAssessment(
             patient_id="PT-001",
-            ensemble_score=5.0,
+            dds_score=5.0,
             severity="ALERT",
             contributing_factors=["heart_rate_elevated"],
         )
@@ -147,7 +147,7 @@ class TestEpisodeRepository:
         repo._episodes[ep1.episode_id].created_at = ep2.created_at + timedelta(seconds=10)
         assessment = DeteriorationAssessment(
             patient_id="PT-001",
-            ensemble_score=18.0,
+            dds_score=18.0,
             severity="EMERGENCY",
             contributing_factors=["heart_rate_critical"],
         )
@@ -166,7 +166,7 @@ class TestAssessmentRepository:
                 ep_id,
                 DeteriorationAssessment(
                     patient_id="PT-001",
-                    ensemble_score=0.0,
+                    dds_score=0.0,
                     severity=sev,
                 ),
             )
@@ -181,7 +181,7 @@ class TestAssessmentRepository:
                 "E-1",
                 DeteriorationAssessment(
                     patient_id="PT-001",
-                    ensemble_score=float(i),
+                    dds_score=float(i),
                     severity="NORMAL",
                 ),
             )

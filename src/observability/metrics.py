@@ -23,7 +23,7 @@ VITALS_INGESTED = Counter(
 
 FORECASTS_GENERATED = Counter(
     "forecasts_generated_total",
-    "Total number of forecast ensembles generated",
+    "Total number of forecasts generated",
 )
 
 ASSESSMENTS_TOTAL = Counter(
@@ -84,7 +84,7 @@ INGEST_DURATION = Histogram(
 
 FORECAST_DURATION = Histogram(
     "forecast_duration_seconds",
-    "Time spent generating forecast ensemble",
+    "Time spent generating forecast",
     buckets=[0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0],
 )
 

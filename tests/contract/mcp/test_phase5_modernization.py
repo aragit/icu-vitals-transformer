@@ -18,7 +18,7 @@ from mcp.server.fastmcp import FastMCP
 from src.adapters.mcp.discovery import discover_capabilities
 from src.adapters.mcp.server import _resolve_transport, create_mcp_server
 from src.auth.cimd import TokenParseError, parse_cimd_token, parse_optional_bearer
-from src.dependencies import reset_dependencies
+from src.dependencies import get_clinical_service, reset_dependencies
 from src.main import app
 from src.vitals_state import _vitals_store
 
@@ -112,7 +112,7 @@ async def test_get_discover_endpoint(httpx_client):
         "discover_episode",
         "discover_capabilities",
     }
-    assert "clinical://bounds/v1" in [r["uri"] for r in body["resources"]]
+    assert "resources" not in body
     assert body["_meta"]["clinical_disclaimer"]
 
 
@@ -183,40 +183,82 @@ def test_router_isolation_no_framework_in_core():
 
 
 # --------------------------------------------------------------------------- #
-# MRTR elicitation
+# Episode discovery (data, not dialogue)
 # --------------------------------------------------------------------------- #
-def test_mrtr_returns_prompt_for_ambiguous_episodes():
-    from src.adapters.mcp.mrtr import mrtr_ambiguous_episode, resolve_single_episode
-    from src.core.domain.episode import Episode
-
-    ep1 = Episode(episode_id="E-A", patient_id="PT-X")
-    ep2 = Episode(episode_id="E-B", patient_id="PT-X")
-    mrtr = mrtr_ambiguous_episode("PT-X", [ep1, ep2], requested_by="dr-x")
-    assert mrtr["type"] == "mrtr"
-    assert mrtr["kind"] == "episode_disambiguation"
-    assert {c["episode_id"] for c in mrtr["choices"]} == {"E-A", "E-B"}
-    assert mrtr["requested_by"] == "dr-x"
-
-    # resolve_single_episode: explicit id -> None; single candidate -> None;
-    # multiple candidates + no id -> MRTR.
-    assert resolve_single_episode("PT-X", [ep1], None) is None
-    assert resolve_single_episode("PT-X", [ep1, ep2], "E-A") is None
-    assert resolve_single_episode("PT-X", [ep1, ep2], None) is not None
+def _mcp_payload(result) -> dict:
+    """Extract the structured payload from a FastMCP ``call_tool`` result."""
+    if isinstance(result, tuple):
+        blocks, structured = result
+        if isinstance(structured, dict):
+            return structured
+        result = blocks
+    blocks = result if isinstance(result, list) else [result]
+    text = next(b.text for b in blocks if getattr(b, "type", None) == "text")
+    return json.loads(text)
 
 
 @pytest.mark.asyncio
-async def test_discover_episode_emits_mrtr_when_multiple_active(mcp_server):
-    """discover_episode on a patient with >1 active episode returns MRTR."""
-    from src.adapters.mcp.mrtr import mrtr_ambiguous_episode
-    from src.core.domain.episode import Episode
+async def test_discover_episode_single_returns_episode(mcp_server):
+    """discover_episode with one active episode returns episode_id directly."""
+    reset_dependencies()
+    _vitals_store.clear()
+    server = create_mcp_server()
+    svc = get_clinical_service()
+    ep = await svc.open_episode("PT-DISC-SINGLE")
+    result = await server.call_tool(
+        "discover_episode", {"patient_id": "PT-DISC-SINGLE"}
+    )
+    payload = _mcp_payload(result)
+    assert payload["episode_id"] == ep.episode_id
+    assert payload["state"] == ep.state.value
+    assert "episodes" not in payload
 
-    # The default repo holds a single active episode per patient; demonstrate
-    # the MRTR contract directly with constructed candidate episodes.
-    ep1 = Episode(episode_id="E-A", patient_id="PT-MRTR")
-    ep2 = Episode(episode_id="E-B", patient_id="PT-MRTR")
-    mrtr = mrtr_ambiguous_episode("PT-MRTR", [ep1, ep2], requested_by=None)
-    assert mrtr["type"] == "mrtr"
-    assert {c["episode_id"] for c in mrtr["choices"]} == {"E-A", "E-B"}
+
+@pytest.mark.asyncio
+async def test_discover_episode_multiple_returns_list(mcp_server):
+    """discover_episode with >1 active episodes returns an episodes array."""
+    reset_dependencies()
+    _vitals_store.clear()
+    server = create_mcp_server()
+    svc = get_clinical_service()
+    ep1 = await svc.open_episode("PT-DISC-MULTI")
+    ep2 = await svc.open_episode("PT-DISC-MULTI")
+    result = await server.call_tool(
+        "discover_episode", {"patient_id": "PT-DISC-MULTI"}
+    )
+    payload = _mcp_payload(result)
+    assert "episodes" in payload
+    assert len(payload["episodes"]) == 2
+    assert {e["episode_id"] for e in payload["episodes"]} == {ep1.episode_id, ep2.episode_id}
+
+
+@pytest.mark.asyncio
+async def test_discover_episode_explicit_id(mcp_server):
+    """discover_episode with an explicit episode_id resolves that episode."""
+    reset_dependencies()
+    _vitals_store.clear()
+    server = create_mcp_server()
+    svc = get_clinical_service()
+    ep = await svc.open_episode("PT-DISC-EXPLICIT")
+    result = await server.call_tool(
+        "discover_episode",
+        {"patient_id": "PT-DISC-EXPLICIT", "episode_id": ep.episode_id},
+    )
+    payload = _mcp_payload(result)
+    assert payload["episode_id"] == ep.episode_id
+
+
+@pytest.mark.asyncio
+async def test_discover_episode_no_active_returns_none(mcp_server):
+    """discover_episode for a patient with no active episodes returns None."""
+    reset_dependencies()
+    _vitals_store.clear()
+    server = create_mcp_server()
+    result = await server.call_tool(
+        "discover_episode", {"patient_id": "PT-DISC-NONE"}
+    )
+    payload = _mcp_payload(result)
+    assert payload["episode_id"] is None
 
 
 # --------------------------------------------------------------------------- #

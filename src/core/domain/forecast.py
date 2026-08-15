@@ -33,7 +33,7 @@ class DeteriorationAssessment(BaseModel):
     """Deterministic governance output — severity classification only."""
 
     patient_id: str
-    ensemble_score: float = Field(..., ge=0, le=20)
+    dds_score: float = Field(..., ge=0, le=20)
     severity: str = Field(..., pattern=r"^(NORMAL|WARNING|ALERT|EMERGENCY)$")
     contributing_factors: list[str] = Field(default_factory=list)
     assessed_at: datetime = Field(default_factory=datetime.utcnow)
