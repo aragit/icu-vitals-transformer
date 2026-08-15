@@ -106,7 +106,7 @@ hooks are wired at the adapter boundary.
 Episode IDs are generated as `E-<uuid>` (a `uuid4` hex truncated to 12 chars,
 prefixed with `E-`, e.g. `E-a3b2c1d4e5f6`) at `create()` time in both
 `InMemoryEpisodeRepository` (`src/adapters/storage/memory.py`) and
-`RedisEpisodeRepository` (`src/adapters/storage/redis.py`) (see
+`RedisEpisodeRepository` (`src/adapters/storage/contrib/redis.py`) (see
 `docs/ADR-001-episode-id-format.md`). UUIDs eliminate collisions when multiple
 episodes are opened for the same patient, so the active-patient index is now a
 **set** and `get_active_by_patient()` returns the most-recent active episode

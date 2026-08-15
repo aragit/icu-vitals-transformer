@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import timedelta
 
 import pytest
 
@@ -14,14 +13,8 @@ from src.adapters.storage.memory import (
 )
 from src.core.domain.forecast import DeteriorationAssessment
 from src.core.domain.vitals import VitalSignsWindow
-from src.observability.metrics import (
-    EPISODE_STATE_GAUGE,
-    set_episode_state_gauges,
-)
 
 pytestmark = pytest.mark.unit
-
-ALL_STATES = ("NORMAL", "WARNING", "ALERT", "EMERGENCY", "CRITICAL")
 
 
 def _window(pid: str = "PT-001", hr: float | None = 72.0) -> VitalSignsWindow:
@@ -73,51 +66,26 @@ class TestEpisodeRepository:
         repo = InMemoryEpisodeRepository()
         ep = await repo.create("PT-001")
         assert ep.patient_id == "PT-001"
+        assert ep.episode_id.startswith("E-")
         assert await repo.get(ep.episode_id) == ep
         active = await repo.get_active_by_patient("PT-001")
         assert active is not None and active.episode_id == ep.episode_id
 
-    async def test_transition_updates_state(self) -> None:
-        repo = InMemoryEpisodeRepository()
-        ep = await repo.create("PT-001")
-        assessment = DeteriorationAssessment(
-            patient_id="PT-001",
-            dds_score=5.0,
-            severity="ALERT",
-            contributing_factors=["heart_rate_elevated"],
-        )
-        transitioned = await repo.transition(ep.episode_id, "deterioration_assessment", assessment)
-        assert transitioned.state.value == "ALERT"
-        # EMERGENCY transitions clear the active-patient index.
-        alert_assessment = DeteriorationAssessment(
-            patient_id="PT-001",
-            dds_score=9.0,
-            severity="EMERGENCY",
-            contributing_factors=["heart_rate_critical"],
-        )
-        await repo.transition(ep.episode_id, "deterioration_assessment", alert_assessment)
-        assert await repo.get_active_by_patient("PT-001") is None
-
     async def test_update_window_records_latest(self) -> None:
         repo = InMemoryEpisodeRepository()
         ep = await repo.create("PT-001")
-        await repo.update_window(ep.episode_id, _window("PT-001", hr=90.0))
+        updated = await repo.update_window(ep.episode_id, _window("PT-001", hr=90.0))
+        assert "heart_rate" in updated.available_vitals
+        assert updated.updated_at >= updated.created_at
 
-    async def test_transition_updates_episode_state_gauge(self) -> None:
-        """Phase A.1: transition() updates EPISODE_STATE_GAUGE after state change."""
-        set_episode_state_gauges({s: 0 for s in ALL_STATES})
+    async def test_update_persists_mutations(self) -> None:
         repo = InMemoryEpisodeRepository()
         ep = await repo.create("PT-001")
-        assessment = DeteriorationAssessment(
-            patient_id="PT-001",
-            dds_score=5.0,
-            severity="ALERT",
-            contributing_factors=["heart_rate_elevated"],
-        )
-        await repo.transition(ep.episode_id, "deterioration_assessment", assessment)
-        assert EPISODE_STATE_GAUGE.labels(state="ALERT")._value.get() == 1
-        assert EPISODE_STATE_GAUGE.labels(state="NORMAL")._value.get() == 0
-        assert EPISODE_STATE_GAUGE.labels(state="WARNING")._value.get() == 0
+        ep.available_vitals.add("avpu")
+        persisted = await repo.update(ep)
+        fetched = await repo.get(ep.episode_id)
+        assert fetched is not None and "avpu" in fetched.available_vitals
+        assert persisted.available_vitals == fetched.available_vitals
 
     async def test_two_episodes_same_patient_are_unique_and_both_active(self) -> None:
         repo = InMemoryEpisodeRepository()
@@ -134,27 +102,13 @@ class TestEpisodeRepository:
         ep1 = await repo.create("PT-001")
         ep2 = await repo.create("PT-001")
         # Make ep1 strictly newer than ep2 in the stored episode.
+        from datetime import timedelta
+
         repo._episodes[ep1.episode_id].created_at = ep2.created_at + timedelta(seconds=10)
         active = await repo.get_active_by_patient("PT-001")
         assert active is not None and active.episode_id == ep1.episode_id
         ordered = await repo.get_all_active_by_patient("PT-001")
         assert [e.episode_id for e in ordered] == [ep1.episode_id, ep2.episode_id]
-
-    async def test_transition_emergency_removes_only_transitioned_episode(self) -> None:
-        repo = InMemoryEpisodeRepository()
-        ep1 = await repo.create("PT-001")
-        ep2 = await repo.create("PT-001")
-        repo._episodes[ep1.episode_id].created_at = ep2.created_at + timedelta(seconds=10)
-        assessment = DeteriorationAssessment(
-            patient_id="PT-001",
-            dds_score=18.0,
-            severity="EMERGENCY",
-            contributing_factors=["heart_rate_critical"],
-        )
-        await repo.transition(ep1.episode_id, "deterioration_assessment", assessment)
-        remaining = await repo.get_all_active_by_patient("PT-001")
-        assert len(remaining) == 1
-        assert remaining[0].episode_id == ep2.episode_id
 
 
 class TestAssessmentRepository:

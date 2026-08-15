@@ -84,7 +84,6 @@ async def test_ingest_vitals_returns_meta(mcp_server):
     assert payload["episode_id"].startswith("E-")
     assert len(payload["episode_id"]) > len("PT-M1") + 2  # UUID suffix present
     _meta = payload["_meta"]
-    assert _meta["clinical_disclaimer"]
     assert isinstance(_meta["data_freshness_seconds"], int)
 
 
@@ -101,7 +100,6 @@ async def test_forecast_tool_returns_meta(mcp_server):
     payload = _text(result)
     assert "forecasted_vitals" in payload
     _meta = payload["_meta"]
-    assert _meta["clinical_disclaimer"]
     assert "data_freshness_seconds" in _meta
 
 
@@ -118,7 +116,6 @@ async def test_deterioration_index_returns_meta(mcp_server):
     payload = _text(result)
     assert "dds_score" in payload
     _meta = payload["_meta"]
-    assert _meta["clinical_disclaimer"]
     assert "data_freshness_seconds" in _meta
 
 
@@ -133,7 +130,7 @@ async def test_discover_episode_returns_meta(mcp_server):
     payload = _text(result)
     assert payload["episode_id"] == episode_id
     _meta = payload["_meta"]
-    assert _meta["clinical_disclaimer"]
+    assert "data_freshness_seconds" in _meta
 
 
 @pytest.mark.asyncio
@@ -153,4 +150,4 @@ async def test_discover_capabilities_tool_returns_caps(mcp_server):
     assert "safety_bounds" in payload
     assert "loinc_mapping" in payload
     assert "_meta" in payload
-    assert payload["_meta"]["clinical_disclaimer"]
+    assert "data_freshness_seconds" in payload["_meta"]

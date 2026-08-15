@@ -13,7 +13,6 @@ from src.adapters.storage.memory import (
     InMemoryEpisodeRepository,
     InMemoryVitalsRepository,
 )
-from src.core.domain.episode import EpisodeState
 from src.core.domain.vitals import VitalSignsWindow
 from src.core.safety.shell import SafetyShell
 from src.core.services.clinical_assessment import ClinicalAssessmentService
@@ -66,7 +65,6 @@ class TestIngestAndWindow:
         assert window.heart_rate == 72.0
         episode = await svc._episodes.get_active_by_patient("PT-001")
         assert episode is not None
-        assert episode.state == EpisodeState.NORMAL
         assert episode.patient_id == "PT-001"
 
 
@@ -83,7 +81,6 @@ class TestAssessEpisode:
 
         transitioned = await svc._episodes.get(episode.episode_id)
         assert transitioned is not None
-        assert transitioned.state == EpisodeState.NORMAL
 
         trail = await svc._assessments.get_audit_trail(episode.episode_id)
         assert trail and trail[-1].severity == "NORMAL"
@@ -105,7 +102,6 @@ class TestAssessEpisode:
 
         transitioned = await svc._episodes.get(episode.episode_id)
         assert transitioned is not None
-        assert transitioned.state == EpisodeState.WARNING
 
 
 class TestDiscoverChannels:

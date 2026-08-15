@@ -1,17 +1,16 @@
 """Response metadata envelope helper (REST driving adapter).
 
-Every v2 response carries a ``_meta`` block with the clinical safety
-disclaimer and the staleness (freshness) of the underlying vital data, so
-downstream clients and clinical consumers can see at a glance both the data
-provenance and the advisory nature of the output.
+Every v2 response carries a ``_meta`` block with the staleness (freshness) of
+the underlying vital data, so downstream clients and clinical consumers can
+gauge data provenance at a glance. The static clinical safety disclaimer is
+surfaced at the server-capability level (``GET /discover`` and the MCP server
+``instructions``), not repeated per response.
 """
 
 from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Any
-
-from src.core.domain.disclaimer import CLINICAL_SAFETY_DISCLAIMER
 
 
 def freshness_seconds(window_end: datetime) -> int:
@@ -29,6 +28,5 @@ def freshness_seconds(window_end: datetime) -> int:
 def build_meta(data_freshness_seconds: int) -> dict[str, Any]:
     """Construct the standard ``_meta`` envelope for v2 responses."""
     return {
-        "clinical_disclaimer": CLINICAL_SAFETY_DISCLAIMER,
         "data_freshness_seconds": data_freshness_seconds,
     }

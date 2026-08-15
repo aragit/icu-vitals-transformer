@@ -55,8 +55,8 @@ downstream clients cannot misinterpret a zero vital as a valid projection.
 
 `compute_dds` returns `0 ≤ score ≤ 20` (`DDS_MAX_SCORE`). `assess_episode`
 further clamps the exposed `dds_score` to `min(score, 20.0)`. Severity
-tiers (`src/core/governance/severity.py::severity_from_score`, mirrored on
-`src/core/domain/episode.py::EpisodeState`):
+tiers are produced by `src/core/governance/severity.py::severity_from_score`
+and stored on `DeteriorationAssessment.severity`:
 
 | Tier | DDS range |
 |------|-----------|

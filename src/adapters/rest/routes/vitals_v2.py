@@ -101,7 +101,7 @@ async def deterioration_episode(
     episode_id: str,
     service: ClinicalAssessmentService = Depends(get_clinical_service),
 ) -> dict[str, Any]:
-    """Evaluate DDS index, severity tier, and trigger the episode transition."""
+    """Evaluate DDS index and severity tier for an episode."""
     try:
         assessment = await service.assess_episode(episode_id)
         window = await service.get_current_window(episode_id)

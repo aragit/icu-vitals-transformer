@@ -4,10 +4,10 @@ These ``typing.Protocol`` definitions are framework-agnostic (Core Isolation
 invariant applies). Adapters in ``src/adapters/storage`` and
 ``src/adapters/episode`` implement them.
 
-The repository contract is intentionally async so that an in-process
-``asyncio.Lock`` can serialize concurrent coroutine access while the methods
-remain callable from both ``async`` service code and (via ``anyio``) from
-short-lived sync wrappers at the adapter boundary.
+The repository contract is intentionally async so the methods remain callable
+from both ``async`` service code and (via ``anyio``) short-lived sync wrappers
+at the adapter boundary. Concurrency for in-process adapters is serialised by
+the service layer, not by locks held inside the repository.
 """
 
 from __future__ import annotations
@@ -54,12 +54,8 @@ class EpisodeRepository(Protocol):
         """All active episodes for a patient (supports multi-episode lookup)."""
         ...
 
-    async def transition(
-        self,
-        episode_id: str,
-        trigger: str,
-        assessment: DeteriorationAssessment,
-    ) -> Episode:
+    async def update(self, episode: Episode) -> Episode:
+        """Persist a mutated episode (e.g. updated ``available_vitals``)."""
         ...
 
     async def update_window(self, episode_id: str, window: VitalSignsWindow) -> Episode:

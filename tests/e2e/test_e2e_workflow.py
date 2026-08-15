@@ -21,7 +21,6 @@ _BASE = "http://test"
 def _check_meta(payload: dict) -> None:
     assert "_meta" in payload
     meta = payload["_meta"]
-    assert meta["clinical_disclaimer"]
     assert isinstance(meta["data_freshness_seconds"], int)
 
 
@@ -153,4 +152,4 @@ async def test_v2_ingest_resolves_episode_and_window(httpx_client):
     assert body["patient_id"] == "PT-PARITY"
     assert body["heart_rate"] == 76.0
     assert body["systolic_bp"] == 118.0
-    assert "clinical_disclaimer" in body["_meta"]
+    assert "data_freshness_seconds" in body["_meta"]

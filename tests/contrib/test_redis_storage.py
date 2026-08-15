@@ -1,4 +1,4 @@
-"""Unit tests for the Redis storage adapters (src/adapters/storage/redis.py).
+"""Unit tests for the Redis storage adapters (``src/adapters/storage/contrib/redis.py``).
 
 The Redis data clients are injected as ``unittest.mock.AsyncMock`` objects so
 the suite never requires a live Redis server. This exercises every branch of
@@ -8,26 +8,22 @@ still validating the Sorted-Set / Hash / List / index-set wiring.
 
 from __future__ import annotations
 
-from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from src.adapters.storage.redis import (
+from src.adapters.storage.contrib.redis import (
     RedisAssessmentRepository,
     RedisEpisodeRepository,
     RedisVitalsRepository,
     is_redis_available,
 )
-from src.core.domain.episode import Episode, EpisodeState
+from src.core.domain.episode import Episode
 from src.core.domain.forecast import DeteriorationAssessment
 from src.core.domain.vitals import VitalSignsWindow
-from src.observability.metrics import EPISODE_STATE_GAUGE, set_episode_state_gauges
 
 pytestmark = pytest.mark.unit
-
-ALL_STATES = ("NORMAL", "WARNING", "ALERT", "EMERGENCY", "CRITICAL")
 
 
 def _window(hr: float | None = 72.0) -> VitalSignsWindow:
@@ -67,6 +63,17 @@ def _mock_redis(**overrides: Any) -> AsyncMock:
     for name, value in overrides.items():
         setattr(redis, name, value)
     return redis
+
+
+def _hash_from_episode(episode_id: str, patient_id: str) -> dict[str, Any]:
+    ep = Episode(episode_id=episode_id, patient_id=patient_id)
+    return {
+        "episode_id": ep.episode_id,
+        "patient_id": ep.patient_id,
+        "available_vitals": "[]",
+        "created_at": ep.created_at.isoformat(),
+        "updated_at": ep.updated_at.isoformat(),
+    }
 
 
 class TestRedisVitalsRepository:
@@ -139,117 +146,30 @@ class TestRedisEpisodeRepository:
         all_active = await repo.get_all_active_by_patient("PT-001")
         assert len(all_active) == 2
 
-    async def test_transition_emergency_clears_active_index(self) -> None:
-        redis = _mock_redis(
-            hgetall=AsyncMock(side_effect=[
-                _hash_from_episode("E-PT-001", "PT-001"),
-                {},
-            ]),
-        )
-        repo = RedisEpisodeRepository(client=redis)
-        assessment = DeteriorationAssessment(
-            patient_id="PT-001",
-            dds_score=18.0,
-            severity="EMERGENCY",
-            contributing_factors=["heart_rate_elevated"],
-        )
-        ep = await repo.transition("E-PT-001", "deterioration_assessment", assessment)
-        assert ep.state is EpisodeState.EMERGENCY
-        # Phase 1 fix: transition() must NOT derive available_vitals from
-        # contributing_factors (those are scoring artifacts like
-        # "heart_rate_elevated", not vital-type names). available_vitals is now
-        # owned by update_window(); transition leaves it untouched.
-        assert ep.available_vitals == set()
-        redis.srem.assert_awaited_once()
-
-    async def test_transition_non_emergency_keeps_index(self) -> None:
-        redis = _mock_redis(
-            hgetall=AsyncMock(side_effect=[
-                _hash_from_episode("E-PT-001", "PT-001"),
-                {},
-            ]),
-        )
-        repo = RedisEpisodeRepository(client=redis)
-        assessment = DeteriorationAssessment(
-            patient_id="PT-001",
-            dds_score=5.0,
-            severity="WARNING",
-            contributing_factors=["resp_elevated"],
-        )
-        ep = await repo.transition("E-PT-001", "low", assessment)
-        assert ep.state is EpisodeState.WARNING
-        redis.srem.assert_not_awaited()
-
-    async def test_transition_with_unknown_severity_falls_back_normal(self) -> None:
-        redis = _mock_redis(
-            hgetall=AsyncMock(side_effect=[
-                _hash_from_episode("E-PT-001", "PT-001"),
-                {},
-            ]),
-        )
-        repo = RedisEpisodeRepository(client=redis)
-        # Use a plain attribute carrier so we can inject an invalid severity
-        # value that bypasses DeteriorationAssessment's regex validation,
-        # exercising the fallback-to-NORMAL branch.
-        assessment = SimpleNamespace(
-            severity="BOGUS", contributing_factors=set()
-        )
-        ep = await repo.transition("E-PT-001", "x", assessment)
-        assert ep.state is EpisodeState.NORMAL
-
-    async def test_transition_creates_fresh_when_no_hash(self) -> None:
-        redis = _mock_redis(hgetall=AsyncMock(side_effect=[{}, {}]))
-        repo = RedisEpisodeRepository(client=redis)
-        assessment = DeteriorationAssessment(
-            patient_id="PT-001",
-            dds_score=0.0,
-            severity="NORMAL",
-            contributing_factors=set(),
-        )
-        ep = await repo.transition("E-NEW", "init", assessment)
-        assert ep.patient_id == "unknown"
-        assert ep.state is EpisodeState.NORMAL
-
     async def test_update_window_unknown_raises_keyerror(self) -> None:
         redis = _mock_redis(hgetall=AsyncMock(return_value={}))
         repo = RedisEpisodeRepository(client=redis)
         with pytest.raises(KeyError):
             await repo.update_window("MISSING", _window())
 
-    async def test_update_window_existing(self) -> None:
+    async def test_update_window_existing_syncs_available_vitals(self) -> None:
         redis = _mock_redis(
             hgetall=AsyncMock(return_value=_hash_from_episode("E-PT-001", "PT-001"))
         )
         repo = RedisEpisodeRepository(client=redis)
         ep = await repo.update_window("E-PT-001", _window(hr=90.0))
         assert ep.episode_id == "E-PT-001"
+        assert "heart_rate" in ep.available_vitals
+        assert "avpu" in ep.available_vitals
 
-    async def test_from_hash_defaults_state_when_missing(self) -> None:
+    async def test_from_hash_defaults_when_missing(self) -> None:
         redis = RedisEpisodeRepository(client=_mock_redis())
         ep = redis._from_hash(
             {"episode_id": "E-X", "patient_id": "PT-001"}
         )
-        assert ep.state is EpisodeState.NORMAL
-
-    async def test_transition_updates_episode_state_gauge(self) -> None:
-        """Phase A.1: transition() updates EPISODE_STATE_GAUGE via Redis counts hash."""
-        set_episode_state_gauges({s: 0 for s in ALL_STATES})
-        redis = _mock_redis(
-            hgetall=AsyncMock(side_effect=[
-                _hash_from_episode("E-PT-001", "PT-001"),
-                {"NORMAL": "0", "WARNING": "0", "ALERT": "1", "EMERGENCY": "0", "CRITICAL": "0"},
-            ]),
-        )
-        repo = RedisEpisodeRepository(client=redis)
-        assessment = DeteriorationAssessment(
-            patient_id="PT-001",
-            dds_score=18.0,
-            severity="EMERGENCY",
-            contributing_factors=["heart_rate_critical"],
-        )
-        await repo.transition("E-PT-001", "deterioration_assessment", assessment)
-        assert EPISODE_STATE_GAUGE.labels(state="EMERGENCY")._value.get() == 0
-        assert EPISODE_STATE_GAUGE.labels(state="ALERT")._value.get() == 1
+        assert ep.episode_id == "E-X"
+        assert ep.patient_id == "PT-001"
+        assert ep.available_vitals == set()
 
 
 class TestRedisAssessmentRepository:
@@ -310,19 +230,7 @@ class TestIsRedisAvailable:
         coro = _async_ping()
         client.ping.return_value = coro
         try:
-            # A coroutine is neither bool nor str -> False branch (covers line 223).
+            # A coroutine is neither bool nor str -> False branch.
             assert is_redis_available(client) is False
         finally:
             coro.close()
-
-
-def _hash_from_episode(episode_id: str, patient_id: str) -> dict[str, Any]:
-    ep = Episode(episode_id=episode_id, patient_id=patient_id, state=EpisodeState.NORMAL)
-    return {
-        "episode_id": ep.episode_id,
-        "patient_id": ep.patient_id,
-        "state": ep.state.value,
-        "available_vitals": "[]",
-        "created_at": ep.created_at.isoformat(),
-        "updated_at": ep.updated_at.isoformat(),
-    }

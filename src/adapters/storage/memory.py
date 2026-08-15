@@ -1,28 +1,27 @@
 """In-Memory bounded repositories (driven storage adapters).
 
-InMemoryBoundedRepository
-⚠️ SINGLE-INSTANCE ONLY. For dev/test or single-replica deployments.
-Production multi-replica deployments MUST use ``RedisRepository`` (or another
-networked adapter implementing the ``src.ports.repository`` protocols); these
-in-process deques do NOT replicate across replicas and will lose state on
-restart / horizontal scale-out.
+SINGLE-INSTANCE ONLY. For dev/test or single-replica deployments. Production
+multi-replica deployments MUST use the Redis adapter (or another networked
+adapter implementing the ``src.ports.repository`` Protocols); these in-process
+deques do NOT replicate across replicas and will lose state on restart /
+horizontal scale-out.
 
-All three implementations are async (matching the repository ``Protocol``
-contracts) and serialize concurrent access with ``asyncio.Lock``; the vitals
-store additionally uses ``collections.deque(maxlen=1000)`` to evict the oldest
-observations automatically and bound memory growth.
+These repositories intentionally do **not** use ``asyncio.Lock()``. CPython's GIL
+keeps dict/deque/set mutations atomic at the bytecode level, and asyncio's
+single-threaded event loop already serialises coroutine execution; a lock here
+is pure overhead with no race to guard. The methods remain ``async`` to satisfy
+the ``Repository`` Protocol contracts.
 """
 
 from __future__ import annotations
 
-import asyncio
 import uuid
 from collections import deque
+from datetime import datetime
 
-from src.core.domain.episode import Episode, EpisodeState
+from src.core.domain.episode import Episode
 from src.core.domain.forecast import DeteriorationAssessment
 from src.core.domain.vitals import VitalSignsWindow
-from src.observability.metrics import set_episode_state_gauges
 from src.ports.repository import (
     AssessmentRepository,
     EpisodeRepository,
@@ -38,35 +37,30 @@ class InMemoryVitalsRepository(VitalsRepository):
 
     def __init__(self, maxlen: int = MAX_WINDOWS_PER_PATIENT) -> None:
         self._maxlen = maxlen
-        self._lock = asyncio.Lock()
         self._store: dict[str, deque[VitalSignsWindow]] = {}
 
     async def append(self, patient_id: str, window: VitalSignsWindow) -> None:
-        async with self._lock:
-            if patient_id not in self._store:
-                self._store[patient_id] = deque(maxlen=self._maxlen)
-            self._store[patient_id].append(window)
+        if patient_id not in self._store:
+            self._store[patient_id] = deque(maxlen=self._maxlen)
+        self._store[patient_id].append(window)
 
     async def get_window(self, patient_id: str) -> VitalSignsWindow | None:
-        async with self._lock:
-            windows = self._store.get(patient_id)
-            if not windows:
-                return None
-            return windows[-1]
+        windows = self._store.get(patient_id)
+        if not windows:
+            return None
+        return windows[-1]
 
     async def get_history(self, patient_id: str) -> list[VitalSignsWindow]:
-        async with self._lock:
-            windows = self._store.get(patient_id)
-            if windows is None:
-                return []
-            return list(windows)
+        windows = self._store.get(patient_id)
+        if windows is None:
+            return []
+        return list(windows)
 
     async def clear_old(self, patient_id: str) -> int:
-        async with self._lock:
-            windows = self._store.pop(patient_id, None)
-            if not windows:
-                return 0
-            return len(windows)
+        windows = self._store.pop(patient_id, None)
+        if not windows:
+            return 0
+        return len(windows)
 
 
 class InMemoryEpisodeRepository(EpisodeRepository):
@@ -78,103 +72,63 @@ class InMemoryEpisodeRepository(EpisodeRepository):
     """
 
     def __init__(self) -> None:
-        self._lock = asyncio.Lock()
         self._episodes: dict[str, Episode] = {}
         self._active_by_patient: dict[str, set[str]] = {}
         self._windows: dict[str, VitalSignsWindow] = {}
 
     async def create(self, patient_id: str) -> Episode:
-        async with self._lock:
-            episode_id = f"E-{uuid.uuid4().hex[:12]}"
-            episode = Episode(episode_id=episode_id, patient_id=patient_id)
-            self._episodes[episode.episode_id] = episode
-            self._active_by_patient.setdefault(patient_id, set()).add(episode.episode_id)
-            return episode
+        episode_id = f"E-{uuid.uuid4().hex[:12]}"
+        episode = Episode(episode_id=episode_id, patient_id=patient_id)
+        self._episodes[episode.episode_id] = episode
+        self._active_by_patient.setdefault(patient_id, set()).add(episode.episode_id)
+        return episode
 
     async def get(self, episode_id: str) -> Episode | None:
-        async with self._lock:
-            return self._episodes.get(episode_id)
+        return self._episodes.get(episode_id)
 
     async def get_active_by_patient(self, patient_id: str) -> Episode | None:
         """Return the most recent active episode for a patient (by created_at)."""
-        async with self._lock:
-            episode_ids = self._active_by_patient.get(patient_id)
-            if not episode_ids:
-                return None
-            episodes = [
-                self._episodes[eid] for eid in episode_ids if eid in self._episodes
-            ]
-            if not episodes:
-                return None
-            return max(episodes, key=lambda ep: ep.created_at)
+        episode_ids = self._active_by_patient.get(patient_id)
+        if not episode_ids:
+            return None
+        episodes = [
+            self._episodes[eid] for eid in episode_ids if eid in self._episodes
+        ]
+        if not episodes:
+            return None
+        return max(episodes, key=lambda ep: ep.created_at)
 
     async def get_all_active_by_patient(self, patient_id: str) -> list[Episode]:
         """Return all currently-active episodes for a patient, newest first."""
-        async with self._lock:
-            episode_ids = self._active_by_patient.get(patient_id)
-            if not episode_ids:
-                return []
-            episodes = [
-                self._episodes[eid] for eid in episode_ids if eid in self._episodes
-            ]
-            return sorted(episodes, key=lambda ep: ep.created_at, reverse=True)
+        episode_ids = self._active_by_patient.get(patient_id)
+        if not episode_ids:
+            return []
+        episodes = [
+            self._episodes[eid] for eid in episode_ids if eid in self._episodes
+        ]
+        return sorted(episodes, key=lambda ep: ep.created_at, reverse=True)
 
-    async def transition(
-        self,
-        episode_id: str,
-        trigger: str,
-        assessment: DeteriorationAssessment,
-    ) -> Episode:
-        async with self._lock:
-            episode = self._episodes.get(episode_id)
-            if episode is None:
-                raise KeyError(f"Unknown episode: {episode_id}")
-
-            state = EpisodeState(assessment.severity)
-            if state.value not in {e.value for e in EpisodeState}:
-                state = EpisodeState.NORMAL
-            episode.state = state
-            episode.updated_at = episode.updated_at.now()
-            self._episodes[episode_id] = episode
-
-            # An EMERGENCY/critical transition marks the episode no longer
-            # "active" for new auto-creation lookups of the same patient.
-            if state in (EpisodeState.EMERGENCY,):
-                active_set = self._active_by_patient.get(episode.patient_id)
-                if active_set:
-                    active_set.discard(episode_id)
-                    if not active_set:
-                        self._active_by_patient.pop(episode.patient_id, None)
-
-            state_counts: dict[str, int] = {}
-            for ep in self._episodes.values():
-                state_counts[ep.state.value] = state_counts.get(ep.state.value, 0) + 1
-            set_episode_state_gauges(state_counts)
-
-            return episode
+    async def update(self, episode: Episode) -> Episode:
+        """Persist a metadata update for an episode (e.g. available_vitals)."""
+        self._episodes[episode.episode_id] = episode
+        return episode
 
     async def update_window(self, episode_id: str, window: VitalSignsWindow) -> Episode:
-        async with self._lock:
-            episode = self._episodes.get(episode_id)
-            if episode is None:
-                # Window-only updates for a just-created patient may arrive
-                # before an explicit episode; record lazily.
-                raise KeyError(f"Unknown episode: {episode_id}")
-            self._windows[episode_id] = window
-            # derive observed vital channels from the window itself — never
-            # from assessment contributing_factors (scoring artifacts such as
-            # "heart_rate_critical" are not vital-type names).
-            available = {
-                f for f in (
-                    "heart_rate", "systolic_bp", "diastolic_bp", "spo2",
-                    "respiratory_rate", "temperature",
-                ) if getattr(window, f) is not None
-            }
-            if window.avpu is not None:
-                available.add("avpu")
-            episode.available_vitals = available
-            episode.updated_at = episode.updated_at.now()
-            return episode
+        episode = self._episodes.get(episode_id)
+        if episode is None:
+            raise KeyError(f"Unknown episode: {episode_id}")
+        self._windows[episode_id] = window
+        available = {
+            f for f in (
+                "heart_rate", "systolic_bp", "diastolic_bp", "spo2",
+                "respiratory_rate", "temperature",
+            ) if getattr(window, f) is not None
+        }
+        if window.avpu is not None:
+            available.add("avpu")
+        episode.available_vitals = available
+        episode.updated_at = datetime.utcnow()
+        return episode
 
 
 class InMemoryAssessmentRepository(AssessmentRepository):
@@ -182,7 +136,6 @@ class InMemoryAssessmentRepository(AssessmentRepository):
 
     def __init__(self, maxlen: int = MAX_AUDIT_ENTRIES) -> None:
         self._maxlen = maxlen
-        self._lock = asyncio.Lock()
         self._audit: dict[str, deque[DeteriorationAssessment]] = {}
 
     async def append_assessment(
@@ -190,14 +143,12 @@ class InMemoryAssessmentRepository(AssessmentRepository):
         episode_id: str,
         assessment: DeteriorationAssessment,
     ) -> None:
-        async with self._lock:
-            if episode_id not in self._audit:
-                self._audit[episode_id] = deque(maxlen=self._maxlen)
-            self._audit[episode_id].append(assessment)
+        if episode_id not in self._audit:
+            self._audit[episode_id] = deque(maxlen=self._maxlen)
+        self._audit[episode_id].append(assessment)
 
     async def get_audit_trail(self, episode_id: str) -> list[DeteriorationAssessment]:
-        async with self._lock:
-            return list(self._audit.get(episode_id, []))
+        return list(self._audit.get(episode_id, []))
 
 
 __all__ = [

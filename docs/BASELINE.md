@@ -162,13 +162,17 @@ List the active vital channels present in an episode's latest window.
 - Response `200` → `{ episode_id, channels: [...], _meta }`.
 
 ### `GET /discover`
-Capability matrix (registered tools, resources, safety bounds).
+Capability matrix (registered tools, safety bounds). The clinical safety
+disclaimer is returned as a top-level `disclaimer` field.
 
 ### `_meta` envelope
-Every `/v2/*` payload embeds:
+Every `/v2/*` payload embeds a slim `_meta` block:
 ```json
-"_meta": { "clinical_disclaimer": "<CLINICAL_SAFETY_DISCLAIMER>", "data_freshness_seconds": <int> }
+"_meta": { "data_freshness_seconds": <int> }
 ```
+The static clinical safety disclaimer is **not** repeated per response; it is
+surfaced server-wide as a top-level `disclaimer` field on `GET /discover` and
+via the MCP server `instructions`.
 
 ---
 
@@ -177,7 +181,7 @@ Every `/v2/*` payload embeds:
 Defined in `src/adapters/mcp/tools.py`, registered onto a `FastMCP` instance by
 `src/adapters/mcp/server.create_mcp_server()`. Invocation is via
 `server.call_tool(name, arguments)`. All tools return JSON dicts embedding the
-`_meta` envelope (clinical disclaimer + data freshness).
+`_meta` envelope (data freshness); the clinical disclaimer is surfaced server-wide via `GET /discover` and the MCP `instructions`.
 
 ### `ingest_vitals`
 - Input: `{ patient_id: str, observations: list[dict] }` (both required).
@@ -256,8 +260,10 @@ multi-horizon scoring pass in v2.)
 
 ### `_meta` envelope (all v2 REST/MCP responses)
 ```
-{ "clinical_disclaimer": "<CLINICAL_SAFETY_DISCLAIMER>", "data_freshness_seconds": <int> }
+{ "data_freshness_seconds": <int> }
 ```
+The clinical safety disclaimer is a top-level `disclaimer` field on
+`GET /discover` and the MCP server `instructions` only.
 
 ---
 
@@ -452,8 +458,9 @@ v0.9.1 contract:
 - `available_vitals` on an `Episode` is derived **only** from the observed
   `VitalSignsWindow` (the seven numeric fields plus `avpu`) — it is never
   overwritten from assessment `contributing_factors`, which include scoring
-  artifacts such as `heart_rate_critical`. `discover_channels` returns this
-  list and is safe to call after `transition`.
+   artifacts such as `heart_rate_critical`. `discover_channels` returns this
+   list and is safe to call at any point after a vital window has been
+   associated with the episode.
 
 ### 9.6 DDS severity tiers
 - Tier boundaries (see `src/core/governance/severity.py`, mirrored in

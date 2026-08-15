@@ -1,9 +1,9 @@
 """MCP tool definitions for ICU Vitals Transformer (MCP driving adapter).
 
 Tools delegate to the hexagon's ``ClinicalAssessmentService`` and return dicts
-that embed the mandatory ``_meta`` envelope (clinical disclaimer + data
-freshness), mirroring the v2 REST surface. Tools are declared ``async`` so they
-can await the async service layer directly inside FastMCP's event loop.
+that embed the standard ``_meta`` envelope (``data_freshness_seconds``),
+mirroring the v2 REST surface. Tools are declared ``async`` so they can await
+the async service layer directly inside FastMCP's event loop.
 """
 
 from __future__ import annotations
@@ -108,7 +108,6 @@ def register_tools(server: FastMCP) -> None:
             return {
                 "patient_id": patient_id,
                 "episode_id": episode.episode_id,
-                "state": episode.state.value,
                 "_meta": build_meta(0),
             }
 
@@ -118,7 +117,6 @@ def register_tools(server: FastMCP) -> None:
             return {
                 "patient_id": patient_id,
                 "episode_id": None,
-                "state": None,
                 "_meta": build_meta(0),
             }
 
@@ -127,7 +125,6 @@ def register_tools(server: FastMCP) -> None:
             return {
                 "patient_id": patient_id,
                 "episode_id": episode.episode_id,
-                "state": episode.state.value,
                 "_meta": build_meta(0),
             }
 
@@ -137,7 +134,6 @@ def register_tools(server: FastMCP) -> None:
             "episodes": [
                 {
                     "episode_id": ep.episode_id,
-                    "state": ep.state.value,
                     "created_at": ep.created_at.isoformat(),
                 }
                 for ep in candidates

@@ -10,13 +10,6 @@ from src.vitals_state import _vitals_store
 BASE = "http://test"
 
 
-def _disclaimer() -> str:
-    """Lazily resolved to avoid a pydantic body-schema interaction (see NOTE)."""
-    from src.core.domain.disclaimer import CLINICAL_SAFETY_DISCLAIMER
-
-    return CLINICAL_SAFETY_DISCLAIMER
-
-
 @pytest.fixture(autouse=True)
 def clear_state():
     """Reset DI singletons and legacy raw store before each test."""
@@ -41,7 +34,6 @@ def make_fhir_obs(loinc: str, value: float, patient_id: str = "PT-001"):
 
 def assert_meta(payload: dict) -> None:
     meta = payload["_meta"]
-    assert meta["clinical_disclaimer"] == _disclaimer()
     assert isinstance(meta["data_freshness_seconds"], int)
     assert meta["data_freshness_seconds"] >= 0
 

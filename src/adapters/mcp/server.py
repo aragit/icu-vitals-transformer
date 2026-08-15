@@ -18,6 +18,7 @@ import os
 from mcp.server.fastmcp import FastMCP
 from src.adapters.mcp.tools import register_tools
 from src.config import settings
+from src.core.domain.disclaimer import CLINICAL_SAFETY_DISCLAIMER
 
 # Map the friendly env value to FastMCP's accepted transport literal.
 _TRANSPORT_ALIAS = {
@@ -39,7 +40,10 @@ def _resolve_transport() -> str:
 
 def create_mcp_server(name: str | None = None) -> FastMCP:
     """Build the MCP server with the vitals/forecast tool surface."""
-    server = FastMCP(name or settings.mcp_server_name)
+    server = FastMCP(
+        name or settings.mcp_server_name,
+        instructions=CLINICAL_SAFETY_DISCLAIMER,
+    )
     register_tools(server)
     return server
 

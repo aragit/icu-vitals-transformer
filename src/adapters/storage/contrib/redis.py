@@ -6,9 +6,10 @@ are stored in Redis Sorted Sets (``ZADD`` scored by epoch timestamp, 30-day
 TTL); episodes are stored as Redis Hashes with an active-patient index set.
 
 Dev/test fallback: ``src/dependencies`` selects this backend only when
-``REPOSITORY_BACKEND=redis`` AND a Redis client is reachable; otherwise the
-in-process ``InMemory*`` repositories are used, so this module is never a hard
-runtime dependency of the default dev/test path.
+``REPOSITORY_BACKEND=redis`` AND a Redis client is reachable (and the ``redis``
+package is installed); otherwise the in-process ``InMemory*`` repositories are
+used, so this module is never a hard runtime dependency of the default
+dev/test path.
 
 The Redis client is held as ``Any`` because ``redis-py``'s type stubs expose
 sync/async overloads that are impractical to satisfy under strict mypy; this is
@@ -23,9 +24,8 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from src.core.domain.episode import Episode, EpisodeState
+from src.core.domain.episode import Episode
 from src.core.domain.vitals import VitalSignsWindow
-from src.observability.metrics import set_episode_state_gauges
 from src.ports.repository import (
     AssessmentRepository,
     EpisodeRepository,
@@ -86,9 +86,6 @@ class RedisEpisodeRepository(EpisodeRepository):
     def _active_key(self, patient_id: str) -> str:
         return f"index:episode:active:{patient_id}"
 
-    def _state_counts_key(self) -> str:
-        return "episodes:state_counts"
-
     async def create(self, patient_id: str) -> Episode:
         episode_id = f"E-{uuid.uuid4().hex[:12]}"
         episode = Episode(episode_id=episode_id, patient_id=patient_id)
@@ -103,6 +100,7 @@ class RedisEpisodeRepository(EpisodeRepository):
         return self._from_hash(raw)
 
     async def get_active_by_patient(self, patient_id: str) -> Episode | None:
+        """Return the most recent active episode for a patient (by created_at)."""
         members: Any = await self._redis.smembers(self._active_key(patient_id))
         if not members:
             return None
@@ -126,42 +124,8 @@ class RedisEpisodeRepository(EpisodeRepository):
                 out.append(ep)
         return out
 
-    async def transition(self, episode_id: str, trigger: str, assessment: Any) -> Episode:
-        severity = getattr(assessment, "severity", "NORMAL")
-        state = (
-            EpisodeState(severity)
-            if severity in EpisodeState._value2member_map_
-            else EpisodeState.NORMAL
-        )
-        raw: Any = await self._redis.hgetall(self._ep_key(episode_id))
-        episode = (
-            self._from_hash(raw)
-            if raw
-            else Episode(episode_id=episode_id, patient_id="unknown")
-        )
-        old_state = episode.state
-        episode.state = state
-        episode.updated_at = episode.updated_at.now()
+    async def update(self, episode: Episode) -> Episode:
         await self._upsert(episode)
-        if state in (EpisodeState.EMERGENCY,):
-            await self._redis.srem(self._active_key(episode.patient_id), episode.episode_id)
-
-        pipe = self._redis.pipeline()
-        pipe.hincrby(self._state_counts_key(), state.value, 1)
-        if old_state.value != state.value:
-            pipe.hincrby(self._state_counts_key(), old_state.value, -1)
-        await pipe.execute()
-
-        raw_counts: dict[str, Any] = await self._redis.hgetall(self._state_counts_key())
-        state_counts: dict[str, int] = {}
-        for k, v in raw_counts.items():
-            key = k.decode() if isinstance(k, bytes) else k
-            try:
-                state_counts[key] = int(v)
-            except (ValueError, TypeError):
-                continue
-        set_episode_state_gauges(state_counts)
-
         return episode
 
     async def update_window(self, episode_id: str, window: VitalSignsWindow) -> Episode:
@@ -178,7 +142,7 @@ class RedisEpisodeRepository(EpisodeRepository):
         if window.avpu is not None:
             available.add("avpu")
         episode.available_vitals = available
-        episode.updated_at = episode.updated_at.now()
+        episode.updated_at = datetime.utcnow()
         await self._upsert(episode)
         return episode
 
@@ -186,7 +150,6 @@ class RedisEpisodeRepository(EpisodeRepository):
         hash_data: dict[str, str] = {
             "episode_id": episode.episode_id,
             "patient_id": episode.patient_id,
-            "state": episode.state.value,
             "available_vitals": _json.dumps(sorted(episode.available_vitals)),
             "created_at": episode.created_at.isoformat(),
             "updated_at": episode.updated_at.isoformat(),
@@ -202,7 +165,6 @@ class RedisEpisodeRepository(EpisodeRepository):
         return Episode(
             episode_id=raw["episode_id"],
             patient_id=raw["patient_id"],
-            state=EpisodeState(raw.get("state", "NORMAL")),
             available_vitals=available_vitals,
             created_at=datetime.fromisoformat(raw.get("created_at", now_iso)),
             updated_at=datetime.fromisoformat(raw.get("updated_at", now_iso)),
@@ -255,7 +217,6 @@ def is_redis_available(client: Any = None) -> bool:
             return False
     try:
         ping = client.ping()
-        # Async clients return a coroutine; sync clients return a bool/str.
         if isinstance(ping, bool) or isinstance(ping, str):
             return bool(ping)
         return False

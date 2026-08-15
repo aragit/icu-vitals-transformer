@@ -4,29 +4,28 @@ import pytest
 
 from src.observability.metrics import (
     ASSESSMENTS_TOTAL,
-    EPISODE_STATE_GAUGE,
+    FORECAST_DURATION,
     FORECASTS_GENERATED,
+    INGEST_DURATION,
     MCP_TOOL_CALLS,
     STALE_DATA_WARNING_TOTAL,
     VITALS_INGESTED,
     metrics_handler,
-    set_episode_state_gauges,
 )
-
-ALL_STATES = ("NORMAL", "WARNING", "ALERT", "EMERGENCY", "CRITICAL")
 
 
 class TestMetrics:
-    """Test metric counters and exposition."""
+    """Test metric counters, histograms and exposition."""
 
     def setup_method(self):
-        """Reset counters before each test."""
+        """Reset counters/histograms before each test."""
         VITALS_INGESTED._value.set(0)
         FORECASTS_GENERATED._value.set(0)
         ASSESSMENTS_TOTAL._value.set(0)
         MCP_TOOL_CALLS._value.set(0)
         STALE_DATA_WARNING_TOTAL._value.set(0)
-        set_episode_state_gauges({s: 0 for s in ALL_STATES})
+        INGEST_DURATION._sum.set(0.0)
+        FORECAST_DURATION._sum.set(0.0)
 
     def test_vitals_ingested_counter(self):
         """VITALS_INGESTED increments correctly."""
@@ -78,40 +77,13 @@ class TestMetrics:
         with pytest.raises(ValueError, match="non-negative"):
             VITALS_INGESTED.inc(-1)
 
-
-class TestEpisodeStateGauge:
-    """Tests for set_episode_state_gauges (Phase A.1)."""
-
-    def test_two_normal_one_alert(self):
-        """2 NORMAL + 1 ALERT episode → gauge labels reflect correct counts."""
-        counts = {"NORMAL": 2, "ALERT": 1}
-        set_episode_state_gauges(counts)
-        assert EPISODE_STATE_GAUGE.labels(state="NORMAL")._value.get() == 2
-        assert EPISODE_STATE_GAUGE.labels(state="ALERT")._value.get() == 1
-        assert EPISODE_STATE_GAUGE.labels(state="WARNING")._value.get() == 0
-        assert EPISODE_STATE_GAUGE.labels(state="EMERGENCY")._value.get() == 0
-        assert EPISODE_STATE_GAUGE.labels(state="CRITICAL")._value.get() == 0
-
-    def test_all_states_zero(self):
-        """Empty counts reset all tiers to zero."""
-        counts = {"NORMAL": 0, "WARNING": 0, "ALERT": 0, "EMERGENCY": 0, "CRITICAL": 0}
-        set_episode_state_gauges(counts)
-        for tier in ALL_STATES:
-            assert EPISODE_STATE_GAUGE.labels(state=tier)._value.get() == 0
-
-    def test_missing_tier_resets_to_zero(self):
-        """Tiers absent from counts are reset to zero (stale reset)."""
-        # First set some non-zero values.
-        set_episode_state_gauges({"ALERT": 3, "EMERGENCY": 2})
-        # Then only provide NORMAL — all others must drop to 0.
-        set_episode_state_gauges({"NORMAL": 1})
-        assert EPISODE_STATE_GAUGE.labels(state="NORMAL")._value.get() == 1
-        assert EPISODE_STATE_GAUGE.labels(state="ALERT")._value.get() == 0
-        assert EPISODE_STATE_GAUGE.labels(state="EMERGENCY")._value.get() == 0
-
     def test_histograms_registered(self):
         """INGEST_DURATION and FORECAST_DURATION histograms are exported."""
-        from src.observability.metrics import FORECAST_DURATION, INGEST_DURATION
-
         assert INGEST_DURATION._name == "ingest_duration_seconds"
         assert FORECAST_DURATION._name == "forecast_duration_seconds"
+
+    def test_histograms_observe(self):
+        """Histograms record observed durations."""
+        before = INGEST_DURATION._sum.get()
+        INGEST_DURATION.observe(0.123)
+        assert INGEST_DURATION._sum.get() == before + 0.123

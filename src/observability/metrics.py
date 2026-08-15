@@ -13,7 +13,7 @@ bound to the same counters.
 
 from __future__ import annotations
 
-from prometheus_client import Counter, Gauge, Histogram, generate_latest
+from prometheus_client import Counter, Histogram, generate_latest
 
 # Counters — no labels to prevent cardinality explosion.
 VITALS_INGESTED = Counter(
@@ -50,23 +50,8 @@ STALE_DATA_WARNING_TOTAL = Counter(
 VITALS_INGESTED_TOTAL = VITALS_INGESTED
 FORECASTS_GENERATED_TOTAL = FORECASTS_GENERATED
 
-# Gauges — only the episode risk tier is labelled (no identifiers).
-EPISODE_STATE_GAUGE = Gauge(
-    "active_episodes",
-    "Active episodes count by state",
-    labelnames=["state"],
-)
-
-
-def set_episode_state_gauges(counts: dict[str, int]) -> None:
-    """Update the per-state episode gauge from a ``{state: count}`` mapping.
-
-    Any stale tiers are reset to zero so the gauge reflects the live set of
-    states (NORMAL/WARNING/ALERT/EMERGENCY/CRITICAL).
-    """
-    tiers = ("NORMAL", "WARNING", "ALERT", "EMERGENCY", "CRITICAL")
-    for tier in tiers:
-        EPISODE_STATE_GAUGE.labels(state=tier).set(counts.get(tier, 0))
+# (Episode lifecycle counters were removed: severity lives on the
+# DeteriorationAssessment, not the Episode, so there is no episode-state gauge.)
 
 
 # Histograms
@@ -103,8 +88,6 @@ __all__ = [
     "STALE_DATA_WARNING_TOTAL",
     "VITALS_INGESTED_TOTAL",
     "FORECASTS_GENERATED_TOTAL",
-    "EPISODE_STATE_GAUGE",
-    "set_episode_state_gauges",
     "FORECAST_LATENCY",
     "INGEST_DURATION",
     "FORECAST_DURATION",

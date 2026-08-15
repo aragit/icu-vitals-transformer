@@ -10,7 +10,6 @@ from __future__ import annotations
 import pytest
 
 from src.adapters.storage.memory import InMemoryEpisodeRepository
-from src.core.domain.forecast import DeteriorationAssessment
 from src.core.domain.vitals import VitalSignsWindow
 
 pytestmark = pytest.mark.integration
@@ -54,17 +53,10 @@ class TestAvailableVitals:
         )
         assert ep.available_vitals == {"heart_rate", "avpu"}
 
-    async def test_transition_does_not_corrupt_available_vitals(self) -> None:
+    async def test_update_window_does_not_inject_scoring_artifacts(self) -> None:
         repo = InMemoryEpisodeRepository()
         ep = await repo.create("PT-001")
         await repo.update_window(ep.episode_id, _hr_spo2_window())
-        # An ALERT assessment whose contributing_factors include a *scoring*
-        # artifact (not a vital type) must NOT overwrite available_vitals.
-        assessment = DeteriorationAssessment(
-            patient_id="PT-001",
-            dds_score=5.0,
-            severity="ALERT",
-            contributing_factors=["respiratory_rate_critical"],
-        )
-        await repo.transition(ep.episode_id, "deterioration_assessment", assessment)
+        # available_vitals reflects the observed window only; a scoring
+        # artifact like "respiratory_rate_critical" is never injected.
         assert ep.available_vitals == {"heart_rate", "spo2"}

@@ -113,7 +113,8 @@ async def test_get_discover_endpoint(httpx_client):
         "discover_capabilities",
     }
     assert "resources" not in body
-    assert body["_meta"]["clinical_disclaimer"]
+    assert "disclaimer" in body
+    assert body["_meta"]["data_freshness_seconds"] >= 0
 
 
 @pytest.mark.asyncio
@@ -210,8 +211,8 @@ async def test_discover_episode_single_returns_episode(mcp_server):
     )
     payload = _mcp_payload(result)
     assert payload["episode_id"] == ep.episode_id
-    assert payload["state"] == ep.state.value
     assert "episodes" not in payload
+    assert payload["_meta"]["data_freshness_seconds"] >= 0
 
 
 @pytest.mark.asyncio

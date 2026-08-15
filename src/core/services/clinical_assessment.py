@@ -175,9 +175,6 @@ class ClinicalAssessmentService:
             contributing_factors=factors,
         )
 
-        await self._episodes.transition(
-            episode_id, "deterioration_assessment", assessment
-        )
         if self._assessments is not None:
             await self._assessments.append_assessment(episode_id, assessment)
 

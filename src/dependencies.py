@@ -6,9 +6,10 @@ routes, MCP tools) pull shared state from here rather than touching
 module-level globals.
 
 Backend selection: ``REPOSITORY_BACKEND=redis`` activates the multi-replica
-Redis adapters (when a Redis client is reachable); otherwise the in-process
-``InMemory*`` dev adapters are used. The Redis adapter is therefore never a
-hard runtime dependency of the default dev/test path.
+Redis adapters (from ``src.adapters.storage.contrib``, an optional
+``[redis]`` extra) when a Redis client is reachable; otherwise the in-process
+``InMemory*`` dev adapters are used. Redis is therefore never a hard runtime
+dependency of the default dev/test path.
 """
 
 from __future__ import annotations
@@ -20,12 +21,6 @@ from src.adapters.storage.memory import (
     InMemoryAssessmentRepository,
     InMemoryEpisodeRepository,
     InMemoryVitalsRepository,
-)
-from src.adapters.storage.redis import (
-    RedisAssessmentRepository,
-    RedisEpisodeRepository,
-    RedisVitalsRepository,
-    is_redis_available,
 )
 from src.core.safety.shell import SafetyShell
 from src.core.services.clinical_assessment import ClinicalAssessmentService
@@ -46,18 +41,27 @@ _REDIS_REQUESTED = os.environ.get("REPOSITORY_BACKEND", "memory").lower() == "re
 
 
 def _use_redis() -> bool:
-    """True when Redis backend is requested AND reachable (dev-safe fallback)."""
+    """True when Redis backend is requested AND reachable (dev-safe fallback).
+
+    The Redis adapter lives under ``src.adapters.storage.contrib`` and is an
+    optional dependency (``pip install icu-vitals-transformer[redis]``); a
+    missing package is treated as "not available" rather than an error.
+    """
     if not _REDIS_REQUESTED:
         return False
-    if not is_redis_available():
+    try:
+        from src.adapters.storage.contrib.redis import is_redis_available
+    except ImportError:
         return False
-    return True
+    return is_redis_available()
 
 
 def get_vitals_repo() -> VitalsRepository:
     global _vitals_repo
     if _vitals_repo is None:
         if _use_redis():
+            from src.adapters.storage.contrib.redis import RedisVitalsRepository
+
             _vitals_repo = RedisVitalsRepository()
         else:
             _vitals_repo = InMemoryVitalsRepository()
@@ -68,6 +72,8 @@ def get_episode_repo() -> EpisodeRepository:
     global _episode_repo
     if _episode_repo is None:
         if _use_redis():
+            from src.adapters.storage.contrib.redis import RedisEpisodeRepository
+
             _episode_repo = RedisEpisodeRepository()
         else:
             _episode_repo = InMemoryEpisodeRepository()
@@ -78,6 +84,8 @@ def get_assessment_repo() -> AssessmentRepository:
     global _assessment_repo
     if _assessment_repo is None:
         if _use_redis():
+            from src.adapters.storage.contrib.redis import RedisAssessmentRepository
+
             _assessment_repo = RedisAssessmentRepository()
         else:
             _assessment_repo = InMemoryAssessmentRepository()
